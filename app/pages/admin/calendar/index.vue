@@ -367,8 +367,8 @@ function confirmDelete() {
 .btn-primary { background: #111827; color: #fff; border-color: #111827; }
 .btn-primary:hover { background: #1f2937; }
 .btn-sm { padding: 5px 10px; font-size: 0.78rem; }
-.btn-edit { border-color: #e5e7eb; background: #f9fafb; color: #374151; }
-.btn-edit:hover { background: #f3f4f6; }
+.btn-edit { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
+.btn-edit:hover { background: #dbeafe; }
 .btn-danger { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
 .btn-danger:hover { background: #fee2e2; }
 .btn-ghost-sm { padding: 7px 14px; font-size: 0.85rem; border: 1px solid #d1d5db; border-radius: 8px; background: #fff; color: #374151; cursor: pointer; font-family: inherit; }

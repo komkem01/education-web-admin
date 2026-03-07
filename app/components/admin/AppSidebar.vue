@@ -240,7 +240,7 @@ watch(() => route.path, syncOpenGroup)
 .logo-mark {
   width: 32px;
   height: 32px;
-  background: #374151;
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
   border-radius: 8px;
   display: flex;
   align-items: center;
@@ -420,18 +420,19 @@ watch(() => route.path, syncOpenGroup)
 }
 
 .nav-item:hover {
-  background: #1f2937;
+  background: rgba(255,255,255,.04);
   color: #e5e7eb;
 }
 
 .nav-item--active {
-  background: #1f2937;
-  color: #f9fafb;
+  background: rgba(99,102,241,.15) !important;
+  color: #a5b4fc !important;
   font-weight: 600;
+  border-right: 3px solid #6366f1;
 }
 
 .nav-item--active::before {
-  background: #6366f1;
+  background: transparent;
 }
 
 .nav-item--icon {

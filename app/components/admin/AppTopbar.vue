@@ -162,7 +162,7 @@ const logout = async () => {
 .user-avatar {
   width: 30px;
   height: 30px;
-  background: #111827;
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
   color: #fff;
   border-radius: 50%;
   display: flex;

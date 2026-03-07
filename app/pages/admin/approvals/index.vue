@@ -326,8 +326,8 @@ function confirmReject() {
 .btn-approve:hover { background: #dcfce7; }
 .btn-reject { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
 .btn-reject:hover { background: #fee2e2; }
-.btn-detail { border-color: #c7d2fe; background: #eef2ff; color: #4338ca; }
-.btn-detail:hover { background: #e0e7ff; }
+.btn-detail { border-color: #e5e7eb; background: #fff; color: #374151; }
+.btn-detail:hover { background: #f9fafb; }
 
 .field { display: flex; flex-direction: column; gap: 5px; font-size: 0.83rem; font-weight: 500; color: #374151; }
 .req { color: #ef4444; }

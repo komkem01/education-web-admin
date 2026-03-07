@@ -276,10 +276,10 @@ const confirmDelete = () => {
 .btn-clear:hover { background: #f9fafb; color: #374151; }
 .action-btns { display: flex; gap: 6px; justify-content: flex-end; }
 .btn-sm { padding: 5px 10px; font-size: 0.8rem; }
-.btn-detail { border-color: #c7d2fe; background: #eef2ff; color: #4338ca; }
-.btn-detail:hover { background: #e0e7ff; }
-.btn-edit { border-color: #d1d5db; background: #f9fafb; color: #374151; }
-.btn-edit:hover { background: #f3f4f6; border-color: #9ca3af; }
+.btn-detail { border-color: #e5e7eb; background: #fff; color: #374151; }
+.btn-detail:hover { background: #f9fafb; }
+.btn-edit { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
+.btn-edit:hover { background: #dbeafe; border-color: #93c5fd; }
 .btn-danger { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
 .btn-danger:hover { background: #fee2e2; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }

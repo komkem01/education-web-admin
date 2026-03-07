@@ -478,11 +478,11 @@ const docs = [
 }
 
 .btn-edit {
-  border-color: #e5e7eb;
-  background: #f9fafb;
-  color: #374151;
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
 }
-.btn-edit:hover { background: #f3f4f6; }
+.btn-edit:hover { background: #dbeafe; border-color: #93c5fd; }
 
 .btn-save {
   background: #111827;

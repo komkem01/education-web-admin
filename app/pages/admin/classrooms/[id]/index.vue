@@ -184,8 +184,8 @@ function confirmDelete() {
 .btn-back:hover { color: #374151; }
 .btn-primary { background: #111827; color: #fff; border-color: #111827; }
 .btn-primary:hover { background: #1f2937; }
-.btn-edit { border-color: #d1d5db; background: #f9fafb; }
-.btn-edit:hover { background: #f3f4f6; }
+.btn-edit { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
+.btn-edit:hover { background: #dbeafe; }
 .btn-danger { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
 .btn-danger:hover { background: #fee2e2; }
 .detail-card { background: #fff; border: 1px solid #e8eaed; border-radius: 14px; padding: 24px; }

@@ -401,13 +401,13 @@ function confirmDelete() {
 }
 
 .btn-detail {
-  border-color: #c7d2fe;
-  background: #eef2ff;
-  color: #4338ca;
+  border-color: #e5e7eb;
+  background: #fff;
+  color: #374151;
 }
 
 .btn-detail:hover {
-  background: #e0e7ff;
+  background: #f9fafb;
 }
 
 .field-error {
