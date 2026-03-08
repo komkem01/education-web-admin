@@ -1,7 +1,25 @@
 <script setup lang="ts">
+type LoginResponse = {
+  data: {
+    access_token: string
+    member: {
+      role: string
+      roles: string[]
+    }
+  }
+}
+
+type SwitchRoleResponse = {
+  data: {
+    access_token: string
+  }
+}
+
 const username = ref('')
 const password = ref('')
 const errorMessage = ref('')
+const loading = ref(false)
+const config = useRuntimeConfig()
 
 const authToken = useCookie<string | null>('edu_auth_token')
 const activeRole = useCookie<string | null>('edu_active_role')
@@ -11,16 +29,56 @@ if (authToken.value) {
 }
 
 const handleLogin = async () => {
+  errorMessage.value = ''
   if (!username.value.trim() || !password.value.trim()) {
     errorMessage.value = 'กรุณากรอกชื่อผู้ใช้และรหัสผ่าน'
     return
   }
 
-  authToken.value = 'mock-token'
-  activeRole.value = 'admin'
-  errorMessage.value = ''
+  loading.value = true
+  try {
+    const loginRes = await $fetch<LoginResponse>(`${config.public.apiBase}/auth/login`, {
+      method: 'POST',
+      body: {
+        email: username.value.trim(),
+        password: password.value,
+      },
+    })
 
-  await navigateTo('/admin')
+    let accessToken = loginRes.data.access_token
+    const primaryRole = loginRes.data.member.role
+    const allRoles = loginRes.data.member.roles ?? []
+
+    if (primaryRole !== 'admin') {
+      if (!allRoles.includes('admin')) {
+        errorMessage.value = 'บัญชีนี้ไม่มีสิทธิ์เข้าใช้งานพอร์ทัลแอดมิน'
+        return
+      }
+
+      const switchRes = await $fetch<SwitchRoleResponse>(`${config.public.apiBase}/auth/switch-role`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: { role: 'admin' },
+      })
+      accessToken = switchRes.data.access_token
+    }
+
+    authToken.value = accessToken
+    activeRole.value = 'admin'
+    await navigateTo('/admin')
+  }
+  catch (error: any) {
+    if (error?.statusCode === 401) {
+      errorMessage.value = 'อีเมลหรือรหัสผ่านไม่ถูกต้อง'
+      return
+    }
+    errorMessage.value = 'เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'
+  }
+  finally {
+    loading.value = false
+  }
 }
 </script>
 
@@ -42,8 +100,8 @@ const handleLogin = async () => {
 
       <form class="login-form" @submit.prevent="handleLogin">
         <label>
-          ชื่อผู้ใช้
-          <input v-model="username" type="text" placeholder="เช่น admin.school01" />
+          อีเมล
+          <input v-model="username" type="email" placeholder="เช่น admin@school.ac.th" autocomplete="username" />
         </label>
 
         <label>
@@ -55,7 +113,7 @@ const handleLogin = async () => {
 
         <p v-if="errorMessage" class="error-text">{{ errorMessage }}</p>
 
-        <button type="submit">เข้าสู่ระบบ</button>
+        <button type="submit" :disabled="loading">{{ loading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ' }}</button>
       </form>
 
       <p class="helper-text">* โหมดตัวอย่าง: ผู้พัฒนาระบบเป็นผู้ลงทะเบียนบัญชีเริ่มต้นให้</p>
