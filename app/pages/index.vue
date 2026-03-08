@@ -15,6 +15,15 @@ type SwitchRoleResponse = {
   }
 }
 
+type MeResponse = {
+  data: {
+    member_id: string
+    school_id: string
+    role: string
+    expires_at: string
+  }
+}
+
 const username = ref('')
 const password = ref('')
 const errorMessage = ref('')
@@ -23,6 +32,10 @@ const config = useRuntimeConfig()
 
 const authToken = useCookie<string | null>('edu_auth_token')
 const activeRole = useCookie<string | null>('edu_active_role')
+const authMemberId = useCookie<string | null>('edu_auth_member_id')
+const authSchoolId = useCookie<string | null>('edu_auth_school_id')
+const authRole = useCookie<string | null>('edu_auth_role')
+const authExpiresAt = useCookie<string | null>('edu_auth_expires_at')
 
 if (authToken.value) {
   await navigateTo('/admin')
@@ -65,8 +78,18 @@ const handleLogin = async () => {
       accessToken = switchRes.data.access_token
     }
 
+    const meRes = await $fetch<MeResponse>(`${config.public.apiBase}/auth/me`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    })
+
     authToken.value = accessToken
     activeRole.value = 'admin'
+    authMemberId.value = meRes.data.member_id
+    authSchoolId.value = meRes.data.school_id
+    authRole.value = meRes.data.role
+    authExpiresAt.value = meRes.data.expires_at
     await navigateTo('/admin')
   }
   catch (error: any) {

@@ -4,7 +4,7 @@
     <template v-else>
     <div class="page-header">
       <div>
-        <h2 class="page-title">ยินดีต้อนรับ สมชาย มั่นคง</h2>
+        <h2 class="page-title">ยินดีต้อนรับ {{ headerIdentity }}</h2>
         <p class="page-desc">ภาพรวมระบบ — โรงเรียนตัวอย่างวิทยา · ปีการศึกษา 2568</p>
       </div>
     </div>
@@ -208,6 +208,8 @@ definePageMeta({ layout: 'admin' })
 const { loading } = usePageLoad()
 const config = useRuntimeConfig()
 const authToken = useCookie<string | null>('edu_auth_token')
+const authMemberId = useCookie<string | null>('edu_auth_member_id')
+const authRole = useCookie<string | null>('edu_auth_role')
 
 const { data: meResponse, pending: mePending, error: meError } = useAsyncData(
   'admin-auth-me',
@@ -220,6 +222,12 @@ const { data: meResponse, pending: mePending, error: meError } = useAsyncData(
 )
 
 const meData = computed(() => meResponse.value?.data)
+const headerIdentity = computed(() => {
+  const memberId = meData.value?.member_id || authMemberId.value
+  const role = (meData.value?.role || authRole.value || 'admin').toUpperCase()
+  if (!memberId) return role
+  return `${role} · ${memberId}`
+})
 
 const { rows: personnelRows } = usePersonnelsData()
 const { rows: teacherRows } = useTeachersData()

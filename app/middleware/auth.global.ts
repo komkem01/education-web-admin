@@ -1,7 +1,20 @@
 export default defineNuxtRouteMiddleware((to) => {
   const authToken = useCookie<string | null>('edu_auth_token')
   const activeRole = useCookie<string | null>('edu_active_role')
+  const authMemberId = useCookie<string | null>('edu_auth_member_id')
+  const authSchoolId = useCookie<string | null>('edu_auth_school_id')
+  const authRole = useCookie<string | null>('edu_auth_role')
+  const authExpiresAt = useCookie<string | null>('edu_auth_expires_at')
   const config = useRuntimeConfig()
+
+  function clearAuthContext() {
+    authToken.value = null
+    activeRole.value = null
+    authMemberId.value = null
+    authSchoolId.value = null
+    authRole.value = null
+    authExpiresAt.value = null
+  }
 
   const isLoggedIn = Boolean(authToken.value)
   const isAdminRole = activeRole.value === 'admin'
@@ -26,16 +39,14 @@ export default defineNuxtRouteMiddleware((to) => {
   }
 
   if ((!isLoggedIn || !isAdminRole) && isAdminArea) {
-    authToken.value = null
-    activeRole.value = null
+    clearAuthContext()
     return navigateTo('/')
   }
 
   if (isLoggedIn && isAdminRole) {
     return isSessionValid().then((ok) => {
       if (!ok) {
-        authToken.value = null
-        activeRole.value = null
+        clearAuthContext()
         return navigateTo('/')
       }
 
