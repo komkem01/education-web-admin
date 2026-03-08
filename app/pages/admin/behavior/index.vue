@@ -50,6 +50,9 @@
 
       <!-- Table -->
       <AdminDataTable title="รายการบันทึกพฤติกรรม" :columns="cols" :rows="filteredRows">
+        <template #cell-date="{ value }">
+          {{ formatDateTH(value as string) }}
+        </template>
         <template #cell-type="{ value }">
           <span class="type-badge" :class="value === 'ดี' ? 'type--good' : 'type--bad'">
             {{ value === 'ดี' ? '⭐ ดี' : '⚠ โทษ' }}
@@ -88,7 +91,7 @@
               @change="fillStudent"
             />
             <datalist id="student-list">
-              <option v-for="s in studentRows" :key="s.id" :value="s.id">{{ s.name }}</option>
+              <option v-for="s in studentRows" :key="s.id" :value="s.code">{{ s.code }} - {{ s.name }}</option>
             </datalist>
             <span v-if="formErrors.studentId" class="field-error">{{ formErrors.studentId }}</span>
           </div>
@@ -130,7 +133,7 @@
           </div>
           <div class="form-group form-group--full">
             <label class="form-label">ผู้บันทึก</label>
-            <input v-model="form.recordedBy" class="form-input" placeholder="ชื่อครูผู้บันทึก" />
+            <input v-model="form.recordedBy" class="form-input" placeholder="ชื่อครูผู้บันทึก" readonly />
           </div>
         </div>
       </AdminAppModal>
@@ -148,16 +151,180 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useBehaviorData, type BehaviorRow, GOOD_CATEGORIES, BAD_CATEGORIES } from '~/composables/useBehaviorData'
-import { useStudentsData } from '~/composables/useStudentsData'
+
+type BaseResponse<T> = { data: T }
+type BehaviorType = 'ดี' | 'ไม่ดี'
+
+type BehaviorRow = {
+  id: string
+  studentUUID: string
+  studentId: string
+  studentName: string
+  classroom: string
+  type: BehaviorType
+  category: string
+  description: string
+  points: number
+  date: string
+  recordedBy: string
+}
+
+type StudentApiItem = {
+  id: string
+  student_code: string | null
+  first_name: string | null
+  last_name: string | null
+  current_classroom_id: string | null
+}
+
+type ClassroomApiItem = {
+  id: string
+  name: string
+}
+
+type BehaviorApiItem = {
+  id: string
+  school_id: string
+  student_id: string
+  recorded_by_member_id: string
+  behavior_type: 'good' | 'bad'
+  category: string | null
+  description: string | null
+  points: number
+  recorded_on: string
+  is_active: boolean
+}
+
+type StudentOption = {
+  id: string
+  code: string
+  name: string
+  classroom: string
+}
+
+const GOOD_CATEGORIES = ['ช่วยเหลือผู้อื่น', 'มีจิตอาสา', 'เรียนดีเด่น', 'กีฬาเด่น', 'รักษาความสะอาด', 'ประพฤติดีเด่น']
+const BAD_CATEGORIES = ['ทะเลาะวิวาท', 'แต่งกายผิดระเบียบ', 'หนีเรียน', 'ใช้โทรศัพท์ในห้องเรียน', 'ทำลายทรัพย์สิน', 'มาสาย']
 
 definePageMeta({ layout: 'admin' })
 const { loading } = usePageLoad()
-const { rows } = useBehaviorData()
-const { rows: studentRows } = useStudentsData()
+const config = useRuntimeConfig()
+const authToken = useCookie<string | null>('edu_auth_token')
+const { profile } = useAdminAuth()
+const rows = ref<BehaviorRow[]>([])
+const studentRows = ref<StudentOption[]>([])
+const studentsByID = ref<Record<string, StudentOption>>({})
 
 const goodCategories = GOOD_CATEGORIES
 const badCategories = BAD_CATEGORIES
+
+const recorderDisplayName = computed(() => {
+  const first = (profile.value.firstName || '').trim()
+  const last = (profile.value.lastName || '').trim()
+  const fullName = `${first} ${last}`.trim()
+  if (fullName) return fullName
+  if (profile.value.email) return profile.value.email
+  if (profile.value.memberCode) return profile.value.memberCode
+  if (profile.value.memberId) return profile.value.memberId.slice(0, 8)
+  return 'ผู้ใช้งานระบบ'
+})
+
+function authHeaders() {
+  return { Authorization: `Bearer ${authToken.value}` }
+}
+
+async function apiFetch<T>(path: string, options?: Parameters<typeof $fetch<T>>[1]) {
+  try {
+    return await $fetch<T>(`${config.public.apiBase}/back-office${path}`, options)
+  }
+  catch {
+    return await $fetch<T>(`${config.public.apiBase}${path}`, options)
+  }
+}
+
+function behaviorTypeLabel(type: BehaviorApiItem['behavior_type']): BehaviorType {
+  return type === 'bad' ? 'ไม่ดี' : 'ดี'
+}
+
+function behaviorTypeApi(type: BehaviorType): BehaviorApiItem['behavior_type'] {
+  return type === 'ไม่ดี' ? 'bad' : 'good'
+}
+
+function resolveRecorderName(memberID: string) {
+  if (profile.value.memberId && memberID === profile.value.memberId) {
+    return recorderDisplayName.value
+  }
+  return memberID.slice(0, 8)
+}
+
+function formatDateTH(value: string) {
+  if (!value) return ''
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+
+function mapBehaviorRow(item: BehaviorApiItem): BehaviorRow {
+  const student = studentsByID.value[item.student_id]
+  return {
+    id: item.id,
+    studentUUID: item.student_id,
+    studentId: student?.code || item.student_id.slice(0, 8),
+    studentName: student?.name || 'ไม่พบข้อมูลนักเรียน',
+    classroom: student?.classroom || '-',
+    type: behaviorTypeLabel(item.behavior_type),
+    category: (item.category || '').trim(),
+    description: (item.description || '').trim(),
+    points: item.points,
+    date: item.recorded_on,
+    recordedBy: resolveRecorderName(item.recorded_by_member_id),
+  }
+}
+
+async function loadStudentsAndClassrooms() {
+  if (!authToken.value || !profile.value.schoolId) return
+
+  const [studentsRes, classroomsRes] = await Promise.all([
+    apiFetch<BaseResponse<StudentApiItem[]>>('/students?only_active=true', { headers: authHeaders() }),
+    apiFetch<BaseResponse<ClassroomApiItem[]>>(`/classrooms?school_id=${profile.value.schoolId}`, { headers: authHeaders() }),
+  ])
+
+  const classroomMap: Record<string, string> = {}
+  for (const c of (Array.isArray(classroomsRes.data) ? classroomsRes.data : [])) {
+    classroomMap[c.id] = c.name
+  }
+
+  const students = (Array.isArray(studentsRes.data) ? studentsRes.data : []).map((s) => {
+    const first = (s.first_name || '').trim()
+    const last = (s.last_name || '').trim()
+    const fullName = `${first} ${last}`.trim() || 'ไม่ระบุชื่อ'
+    const code = (s.student_code || '').trim() || s.id.slice(0, 8)
+    const classroom = s.current_classroom_id ? (classroomMap[s.current_classroom_id] || '-') : '-'
+    return { id: s.id, code, name: fullName, classroom }
+  })
+
+  studentRows.value = students
+  studentsByID.value = Object.fromEntries(students.map(s => [s.id, s]))
+}
+
+async function loadRows() {
+  if (!authToken.value || !profile.value.schoolId) return
+  const res = await apiFetch<BaseResponse<BehaviorApiItem[]>>(`/student-behaviors?school_id=${profile.value.schoolId}&only_active=true`, { headers: authHeaders() })
+  rows.value = (Array.isArray(res.data) ? res.data : []).map(mapBehaviorRow)
+}
+
+if (import.meta.client) {
+  ;(async () => {
+    try {
+      await loadStudentsAndClassrooms()
+      await loadRows()
+    }
+    catch {
+      rows.value = []
+      studentRows.value = []
+      studentsByID.value = {}
+    }
+  })()
+}
 
 const cols = [
   { key: 'date', label: 'วันที่' },
@@ -180,7 +347,7 @@ const filterDate = ref('')
 const filteredRows = computed(() => {
   const q = search.value.toLowerCase()
   return rows.value.filter(r => {
-    if (q && !r.studentName.toLowerCase().includes(q) && !r.studentId.includes(q)) return false
+    if (q && !r.studentName.toLowerCase().includes(q) && !r.studentId.toLowerCase().includes(q)) return false
     if (filterType.value && r.type !== filterType.value) return false
     if (filterClassroom.value && r.classroom !== filterClassroom.value) return false
     if (filterDate.value && r.date !== filterDate.value) return false
@@ -199,30 +366,33 @@ function clearFilters() {
   filterDate.value = ''
 }
 
-// ── Add / Edit ──
 const showModal = ref(false)
 const isEditing = ref(false)
 let editTarget: BehaviorRow | null = null
 
 const emptyForm = (): BehaviorRow => ({
-  id: 0, studentId: '', studentName: '', classroom: '',
+  id: '', studentUUID: '', studentId: '', studentName: '', classroom: '',
   type: 'ดี', category: '', description: '', points: 5,
-  date: new Date().toISOString().slice(0, 10), recordedBy: '',
+  date: new Date().toISOString().slice(0, 10), recordedBy: recorderDisplayName.value,
 })
 const form = ref<BehaviorRow>(emptyForm())
 const formErrors = ref({ studentId: '', description: '' })
 
 function fillStudent() {
-  const found = studentRows.value.find(s => s.id === form.value.studentId)
+  const found = studentRows.value.find(s => s.code === form.value.studentId.trim())
   if (found) {
+    form.value.studentUUID = found.id
     form.value.studentName = found.name
-    form.value.classroom = found.class
+    form.value.classroom = found.classroom
+  }
+  else {
+    form.value.studentUUID = ''
   }
 }
 
 function validate() {
   formErrors.value = { studentId: '', description: '' }
-  if (!form.value.studentId.trim()) formErrors.value.studentId = 'กรุณาระบุรหัสนักเรียน'
+  if (!form.value.studentId.trim() || !form.value.studentUUID) formErrors.value.studentId = 'กรุณาระบุรหัสนักเรียนให้ถูกต้อง'
   if (!form.value.description.trim()) formErrors.value.description = 'กรุณาระบุรายละเอียด'
   return !formErrors.value.studentId && !formErrors.value.description
 }
@@ -243,18 +413,50 @@ function openEdit(row: BehaviorRow) {
   showModal.value = true
 }
 
-function saveRow() {
+async function saveRow() {
   if (!validate()) return
-  if (isEditing.value && editTarget) {
-    const idx = rows.value.indexOf(editTarget)
-    if (idx !== -1) rows.value[idx] = { ...form.value }
-  } else {
-    rows.value.unshift({ ...form.value, id: Date.now() })
+  if (!authToken.value || !profile.value.schoolId || !profile.value.memberId) {
+    formErrors.value.studentId = 'ไม่พบข้อมูลผู้ใช้สำหรับบันทึก'
+    return
   }
-  showModal.value = false
+
+  const payload = {
+    school_id: profile.value.schoolId,
+    student_id: form.value.studentUUID,
+    recorded_by_member_id: profile.value.memberId,
+    behavior_type: behaviorTypeApi(form.value.type),
+    category: form.value.category.trim() || null,
+    description: form.value.description.trim(),
+    points: Number.isFinite(form.value.points) ? form.value.points : 0,
+    recorded_on: form.value.date,
+    is_active: true,
+  }
+
+  try {
+    if (isEditing.value && editTarget) {
+      const res = await apiFetch<BaseResponse<BehaviorApiItem>>(`/student-behaviors/${editTarget.id}`, {
+        method: 'PATCH',
+        headers: authHeaders(),
+        body: payload,
+      })
+      const idx = rows.value.findIndex(item => item.id === editTarget!.id)
+      if (idx !== -1) rows.value[idx] = mapBehaviorRow(res.data)
+    }
+    else {
+      const res = await apiFetch<BaseResponse<BehaviorApiItem>>('/student-behaviors', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: payload,
+      })
+      rows.value.unshift(mapBehaviorRow(res.data))
+    }
+    showModal.value = false
+  }
+  catch {
+    formErrors.value.description = formErrors.value.description || 'บันทึกข้อมูลไม่สำเร็จ'
+  }
 }
 
-// ── Delete ──
 const showConfirm = ref(false)
 const deleteTarget = ref<BehaviorRow | null>(null)
 
@@ -263,10 +465,22 @@ function openDelete(row: BehaviorRow) {
   showConfirm.value = true
 }
 
-function confirmDelete() {
-  if (deleteTarget.value) rows.value = rows.value.filter(r => r !== deleteTarget.value)
-  showConfirm.value = false
-  deleteTarget.value = null
+async function confirmDelete() {
+  if (!deleteTarget.value || !authToken.value) {
+    showConfirm.value = false
+    return
+  }
+  try {
+    await apiFetch(`/student-behaviors/${deleteTarget.value.id}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    })
+    rows.value = rows.value.filter(r => r.id !== deleteTarget.value!.id)
+    deleteTarget.value = null
+  }
+  finally {
+    showConfirm.value = false
+  }
 }
 </script>
 
@@ -291,14 +505,14 @@ function confirmDelete() {
 .search-input:focus { border-color: #6366f1; }
 .filter-select, .filter-input { padding: 8px 12px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 0.875rem; font-family: inherit; outline: none; background: #fff; cursor: pointer; }
 
-.action-btns { display: flex; gap: 6px; justify-content: flex-end; }
+.action-btns { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: nowrap; }
 .btn { display: inline-flex; align-items: center; gap: 6px; border-radius: 8px; padding: 8px 14px; font-size: 0.875rem; font-weight: 500; border: 1px solid #d1d5db; background: #fff; color: #111827; cursor: pointer; font-family: inherit; transition: background 0.12s; }
 .btn-primary { background: #111827; color: #fff; border-color: #111827; }
 .btn-primary:hover { background: #1f2937; }
 .btn-sm { padding: 5px 10px; font-size: 0.78rem; }
 .btn-edit { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
 .btn-edit:hover { background: #dbeafe; }
-.btn-danger { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
+.btn-danger { border-color: #fecaca; background: #fff5f5; color: #dc2626; }
 .btn-danger:hover { background: #fee2e2; }
 .btn-clear { border: 1px solid #e5e7eb; background: #fff; color: #6b7280; font-size: 0.8rem; padding: 7px 12px; border-radius: 8px; font-family: inherit; cursor: pointer; }
 .btn-clear:hover { background: #f9fafb; }

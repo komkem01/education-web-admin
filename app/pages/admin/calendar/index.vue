@@ -79,7 +79,7 @@
               <span class="upcoming-name">{{ ev.title }}</span>
               <span class="upcoming-date">{{ formatDate(ev.date) }}{{ ev.endDate && ev.endDate !== ev.date ? ' – ' + formatDate(ev.endDate) : '' }}</span>
             </div>
-            <div class="upcoming-actions">
+            <div v-if="canManageEvent(ev)" class="upcoming-actions">
               <button type="button" class="btn btn-sm btn-edit" @click="openEdit(ev)">แก้ไข</button>
               <button type="button" class="btn btn-sm btn-danger" @click="openDelete(ev)">ลบ</button>
             </div>
@@ -105,11 +105,12 @@
       <AdminAppModal v-model="showDetail" :title="detailEvent?.title ?? ''" size="sm">
         <template #footer>
           <button type="button" class="btn btn-ghost-sm" @click="showDetail = false">ปิด</button>
-          <button type="button" class="btn btn-primary-sm" @click="showDetail = false; openEdit(detailEvent!)">แก้ไข</button>
+          <button v-if="canManageEvent(detailEvent)" type="button" class="btn btn-primary-sm" @click="showDetail = false; openEdit(detailEvent!)">แก้ไข</button>
         </template>
         <div v-if="detailEvent" class="detail-body">
           <div class="detail-row"><span class="d-label">ประเภท</span><span class="ev-type-badge" :class="`ev-badge--${detailEvent.type}`">{{ eventTypeLabel(detailEvent.type) }}</span></div>
           <div class="detail-row"><span class="d-label">วันที่</span><span class="d-val">{{ formatDate(detailEvent.date) }}{{ detailEvent.endDate && detailEvent.endDate !== detailEvent.date ? ' – ' + formatDate(detailEvent.endDate) : '' }}</span></div>
+          <div v-if="detailEvent.source === 'announcement'" class="detail-note">รายการนี้มาจากประกาศข่าว แก้ไขได้ที่หน้า "ประกาศและข่าวสาร"</div>
           <div v-if="detailEvent.description" class="detail-desc">{{ detailEvent.description }}</div>
         </div>
       </AdminAppModal>
@@ -131,7 +132,7 @@
           <div class="form-group">
             <label class="form-label">ประเภท</label>
             <select v-model="form.type" class="form-input">
-              <option v-for="t in eventTypes" :key="t.type" :value="t.type">{{ t.label }}</option>
+              <option v-for="t in editableEventTypes" :key="t.type" :value="t.type">{{ t.label }}</option>
             </select>
           </div>
           <div class="form-row">
@@ -165,15 +166,138 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useCalendarData, type CalendarEvent, type EventType } from '~/composables/useCalendarData'
+
+type BaseResponse<T> = { data: T }
+type EventType = 'holiday' | 'exam' | 'activity' | 'meeting' | 'other'
+type EventSource = 'calendar' | 'announcement'
+
+type CalendarEvent = {
+  id: string
+  title: string
+  date: string
+  endDate?: string
+  type: EventType
+  description?: string
+  source: EventSource
+}
+
+type CalendarEventApiItem = {
+  id: string
+  school_id: string
+  created_by_member_id: string | null
+  title: string
+  description: string | null
+  event_type: EventType
+  start_date: string
+  end_date: string | null
+  is_active: boolean
+}
+
+type AnnouncementApiItem = {
+  id: string
+  title: string | null
+  content: string | null
+  category: string | null
+  status: 'draft' | 'published' | 'expired'
+  announced_at: string | null
+  published_at: string | null
+  expires_at: string | null
+}
 
 definePageMeta({ layout: 'admin' })
 const { loading } = usePageLoad()
-const { events } = useCalendarData()
+const config = useRuntimeConfig()
+const authToken = useCookie<string | null>('edu_auth_token')
+const { profile } = useAdminAuth()
+const events = ref<CalendarEvent[]>([])
+
+function authHeaders() {
+  return { Authorization: `Bearer ${authToken.value}` }
+}
+
+async function apiFetch<T>(path: string, options?: Parameters<typeof $fetch<T>>[1]) {
+  try {
+    return await $fetch<T>(`${config.public.apiBase}/back-office${path}`, options)
+  }
+  catch {
+    return await $fetch<T>(`${config.public.apiBase}${path}`, options)
+  }
+}
+
+function mapEvent(item: CalendarEventApiItem): CalendarEvent {
+  return {
+    id: item.id,
+    title: item.title,
+    date: item.start_date,
+    endDate: item.end_date || undefined,
+    type: item.event_type,
+    description: item.description || undefined,
+    source: 'calendar',
+  }
+}
+
+function mapAnnouncementToEvents(item: AnnouncementApiItem): CalendarEvent[] {
+  if (item.status !== 'published') return []
+  const title = (item.title || '').trim()
+  if (!title) return []
+
+  const announcementType = mapAnnouncementCategoryToEventType(item.category)
+
+  const effectiveDate = toDateOnly(item.published_at)
+  if (!effectiveDate) return []
+
+  const endDate = toDateOnly(item.expires_at)
+  return [{
+    id: `ann-${item.id}`,
+    title,
+    date: effectiveDate,
+    endDate: endDate || undefined,
+    type: announcementType,
+    description: item.content || undefined,
+    source: 'announcement',
+  }]
+}
+
+function mapAnnouncementCategoryToEventType(category: string | null): EventType {
+  const normalized = (category || '').trim()
+  if (normalized === 'วิชาการ') return 'exam'
+  if (normalized === 'กิจกรรม') return 'activity'
+  if (normalized === 'งานบุคคล') return 'meeting'
+  if (normalized === 'ฉุกเฉิน') return 'holiday'
+  return 'other'
+}
+
+function toDateOnly(value: string | null): string | null {
+  if (!value) return null
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return null
+  return parsed.toISOString().slice(0, 10)
+}
+
+async function loadEvents() {
+  if (!import.meta.client || !authToken.value || !profile.value.schoolId) return
+  try {
+    const [calendarRes, announcementRes] = await Promise.all([
+      apiFetch<BaseResponse<CalendarEventApiItem[]>>(`/school-calendar-events?school_id=${profile.value.schoolId}&only_active=true`, { headers: authHeaders() }),
+      apiFetch<BaseResponse<AnnouncementApiItem[]>>(`/school-announcements?school_id=${profile.value.schoolId}&page=1&size=300&sort_by=published_at&order_by=desc`, { headers: authHeaders() }),
+    ])
+
+    const calendarItems = (Array.isArray(calendarRes.data) ? calendarRes.data : []).map(mapEvent)
+    const announcementItems = (Array.isArray(announcementRes.data) ? announcementRes.data : [])
+      .flatMap(mapAnnouncementToEvents)
+
+    events.value = [...calendarItems, ...announcementItems]
+  }
+  catch {
+    events.value = []
+  }
+}
+
+if (import.meta.client) loadEvents()
 
 const TODAY = new Date()
 const viewYear = ref(TODAY.getFullYear())
-const viewMonth = ref(TODAY.getMonth()) // 0-based
+const viewMonth = ref(TODAY.getMonth())
 
 const weekdays = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
 
@@ -184,6 +308,8 @@ const eventTypes = [
   { type: 'meeting' as EventType, label: 'ประชุม' },
   { type: 'other' as EventType, label: 'อื่นๆ' },
 ]
+
+const editableEventTypes = eventTypes
 
 function eventTypeLabel(type: EventType) {
   return eventTypes.find(t => t.type === type)?.label ?? type
@@ -209,7 +335,6 @@ function goToday() {
   viewMonth.value = TODAY.getMonth()
 }
 
-// Returns events that overlap with a given date
 function eventsOnDate(dateStr: string) {
   return events.value.filter(ev => {
     if (!ev.endDate) return ev.date === dateStr
@@ -225,8 +350,6 @@ const calendarCells = computed(() => {
   const cells: { key: string; day: number | null; dateStr: string; otherMonth: boolean; isToday: boolean; isWeekend: boolean; events: CalendarEvent[] }[] = []
 
   const todayStr = TODAY.toISOString().slice(0, 10)
-
-  // Prefix from prev month
   const prevDays = new Date(year, month, 0).getDate()
   for (let i = firstDay - 1; i >= 0; i--) {
     const d = prevDays - i
@@ -237,14 +360,12 @@ const calendarCells = computed(() => {
     cells.push({ key: 'p' + dateStr, day: d, dateStr, otherMonth: true, isToday: false, isWeekend: dow === 0 || dow === 6, events: eventsOnDate(dateStr) })
   }
 
-  // Current month
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
     const dow = new Date(year, month, d).getDay()
     cells.push({ key: dateStr, day: d, dateStr, otherMonth: false, isToday: dateStr === todayStr, isWeekend: dow === 0 || dow === 6, events: eventsOnDate(dateStr) })
   }
 
-  // Suffix to fill grid (42 cells)
   let nextD = 1
   while (cells.length < 42) {
     const nextMonth = month === 11 ? 0 : month + 1
@@ -271,7 +392,6 @@ function formatDate(d: string) {
   return new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
 }
 
-// ── Day list modal ──
 const showDayModal = ref(false)
 const dayModalTitle = ref('')
 const dayModalEvents = ref<CalendarEvent[]>([])
@@ -281,7 +401,6 @@ function openDayList(dateStr: string, evs: CalendarEvent[]) {
   showDayModal.value = true
 }
 
-// ── Detail ──
 const showDetail = ref(false)
 const detailEvent = ref<CalendarEvent | null>(null)
 function openDetail(ev: CalendarEvent) {
@@ -289,13 +408,16 @@ function openDetail(ev: CalendarEvent) {
   showDetail.value = true
 }
 
-// ── Add / Edit ──
+function canManageEvent(ev: CalendarEvent | null) {
+  return !!ev && ev.source === 'calendar'
+}
+
 const showModal = ref(false)
 const isEditing = ref(false)
 let editTarget: CalendarEvent | null = null
 
 const emptyForm = (): CalendarEvent => ({
-  id: 0, title: '', date: new Date().toISOString().slice(0, 10),
+  id: '', title: '', date: new Date().toISOString().slice(0, 10),
   endDate: '', type: 'activity', description: '',
 })
 const form = ref<CalendarEvent>(emptyForm())
@@ -322,6 +444,7 @@ function openAddOnDate(dateStr: string) {
 }
 
 function openEdit(ev: CalendarEvent) {
+  if (!canManageEvent(ev)) return
   isEditing.value = true
   editTarget = ev
   form.value = { ...ev }
@@ -329,25 +452,69 @@ function openEdit(ev: CalendarEvent) {
   showModal.value = true
 }
 
-function saveEvent() {
+async function saveEvent() {
   if (!validate()) return
-  const clean = { ...form.value, endDate: form.value.endDate || undefined }
-  if (isEditing.value && editTarget) {
-    const idx = events.value.indexOf(editTarget)
-    if (idx !== -1) events.value[idx] = { ...clean }
-  } else {
-    events.value.push({ ...clean, id: Date.now() })
+  if (!authToken.value || !profile.value.schoolId) {
+    formErrors.value.title = 'ไม่พบข้อมูลโรงเรียนสำหรับบันทึก'
+    return
   }
-  showModal.value = false
+
+  const payload = {
+    school_id: profile.value.schoolId,
+    created_by_member_id: profile.value.memberId || null,
+    title: form.value.title.trim(),
+    description: form.value.description?.trim() || null,
+    event_type: form.value.type,
+    start_date: form.value.date,
+    end_date: form.value.endDate || null,
+    is_active: true,
+  }
+
+  try {
+    if (isEditing.value && editTarget) {
+      const res = await apiFetch<BaseResponse<CalendarEventApiItem>>(`/school-calendar-events/${editTarget.id}`, {
+        method: 'PATCH',
+        headers: authHeaders(),
+        body: payload,
+      })
+      const idx = events.value.findIndex(item => item.id === editTarget!.id)
+      if (idx !== -1) events.value[idx] = mapEvent(res.data)
+    }
+    else {
+      const res = await apiFetch<BaseResponse<CalendarEventApiItem>>('/school-calendar-events', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: payload,
+      })
+      events.value.push(mapEvent(res.data))
+    }
+    showModal.value = false
+  }
+  catch {
+    formErrors.value.title = formErrors.value.title || 'บันทึกกิจกรรมไม่สำเร็จ'
+  }
 }
 
-// ── Delete ──
 const showConfirm = ref(false)
 const deleteTarget = ref<CalendarEvent | null>(null)
 function openDelete(ev: CalendarEvent) { deleteTarget.value = ev; showConfirm.value = true }
-function confirmDelete() {
-  if (deleteTarget.value) events.value = events.value.filter(e => e !== deleteTarget.value)
-  showConfirm.value = false; deleteTarget.value = null
+async function confirmDelete() {
+  if (!deleteTarget.value || !authToken.value) {
+    showConfirm.value = false
+    return
+  }
+
+  try {
+    await apiFetch(`/school-calendar-events/${deleteTarget.value.id}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    })
+    events.value = events.value.filter(e => e.id !== deleteTarget.value!.id)
+    deleteTarget.value = null
+  }
+  finally {
+    showConfirm.value = false
+  }
 }
 </script>
 
@@ -369,7 +536,7 @@ function confirmDelete() {
 .btn-sm { padding: 5px 10px; font-size: 0.78rem; }
 .btn-edit { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
 .btn-edit:hover { background: #dbeafe; }
-.btn-danger { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
+.btn-danger { border-color: #fecaca; background: #fff5f5; color: #dc2626; }
 .btn-danger:hover { background: #fee2e2; }
 .btn-ghost-sm { padding: 7px 14px; font-size: 0.85rem; border: 1px solid #d1d5db; border-radius: 8px; background: #fff; color: #374151; cursor: pointer; font-family: inherit; }
 .btn-primary-sm { padding: 7px 14px; font-size: 0.85rem; border: 1px solid #111827; border-radius: 8px; background: #111827; color: #fff; cursor: pointer; font-family: inherit; }
@@ -416,7 +583,7 @@ function confirmDelete() {
 .upcoming-info { flex: 1; display: flex; flex-direction: column; gap: 1px; }
 .upcoming-name { font-size: 0.875rem; font-weight: 500; color: #111827; }
 .upcoming-date { font-size: 0.78rem; color: #6b7280; }
-.upcoming-actions { display: flex; gap: 6px; }
+.upcoming-actions { display: flex; gap: 6px; flex-wrap: nowrap; }
 .upcoming-empty { padding: 20px; text-align: center; color: #9ca3af; font-size: 0.85rem; }
 
 /* Detail modal */
@@ -431,6 +598,7 @@ function confirmDelete() {
 .ev-badge--activity { background: #d1fae5; color: #065f46; }
 .ev-badge--meeting { background: #dbeafe; color: #1e40af; }
 .ev-badge--other { background: #ede9fe; color: #5b21b6; }
+.detail-note { font-size: 0.78rem; color: #0f766e; background: #f0fdfa; border: 1px solid #99f6e4; border-radius: 8px; padding: 8px 10px; }
 
 /* Day modal */
 .day-event-list { display: flex; flex-direction: column; gap: 8px; }

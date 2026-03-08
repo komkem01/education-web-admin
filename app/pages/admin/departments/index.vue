@@ -67,7 +67,10 @@
           </div>
           <div class="form-group form-group--full">
             <label class="form-label">หัวหน้าฝ่าย</label>
-            <input v-model="form.head" class="form-input" placeholder="ชื่อ-สกุล หัวหน้าฝ่าย" />
+            <select v-model="form.head" class="form-input">
+              <option value="">-- เลือกหัวหน้าฝ่าย --</option>
+              <option v-for="opt in headOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+            </select>
           </div>
           <div class="form-group form-group--full">
             <label class="form-label">คำอธิบาย</label>
@@ -89,12 +92,121 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useDepartmentsData, type DepartmentRow } from '~/composables/useDepartmentsData'
+
+type BaseResponse<T> = { data: T }
+
+type DepartmentApiItem = {
+  id: string
+  school_id: string
+  code: string
+  name: string
+  head: string | null
+  description: string | null
+  is_active: boolean
+}
+
+type PersonApiItem = {
+  id: string
+  first_name: string | null
+  last_name: string | null
+}
+
+type DepartmentRow = {
+  id: string
+  name: string
+  code: string
+  head: string
+  description: string
+}
+
+type Option = {
+  value: string
+  label: string
+}
 
 definePageMeta({ layout: 'admin' })
 
 const { loading } = usePageLoad()
-const { rows } = useDepartmentsData()
+const config = useRuntimeConfig()
+const authToken = useCookie<string | null>('edu_auth_token')
+const { profile } = useAdminAuth()
+const rows = ref<DepartmentRow[]>([])
+const headOptions = ref<Option[]>([])
+
+function authHeaders() {
+  return { Authorization: `Bearer ${authToken.value}` }
+}
+
+async function apiFetch<T>(path: string, options?: Parameters<typeof $fetch<T>>[1]) {
+  try {
+    return await $fetch<T>(`${config.public.apiBase}/back-office${path}`, options)
+  }
+  catch {
+    return await $fetch<T>(`${config.public.apiBase}${path}`, options)
+  }
+}
+
+function displayName(item: PersonApiItem) {
+  const first = (item.first_name || '').trim()
+  const last = (item.last_name || '').trim()
+  return `${first} ${last}`.trim()
+}
+
+function mapRow(item: DepartmentApiItem): DepartmentRow {
+  return {
+    id: item.id,
+    code: item.code,
+    name: item.name,
+    head: (item.head || '').trim(),
+    description: (item.description || '').trim(),
+  }
+}
+
+async function loadRows() {
+  if (!import.meta.client || !authToken.value || !profile.value.schoolId) return
+  try {
+    const res = await apiFetch<BaseResponse<DepartmentApiItem[]>>(`/departments?school_id=${profile.value.schoolId}&only_active=false`, { headers: authHeaders() })
+    rows.value = (Array.isArray(res.data) ? res.data : []).map(mapRow)
+  }
+  catch {
+    rows.value = []
+  }
+}
+
+async function loadHeadOptions() {
+  if (!import.meta.client || !authToken.value) return
+  try {
+    const [adminsRes, staffsRes, teachersRes] = await Promise.all([
+      apiFetch<BaseResponse<PersonApiItem[]>>('/admins?only_active=true', { headers: authHeaders() }),
+      apiFetch<BaseResponse<PersonApiItem[]>>('/staffs?only_active=true', { headers: authHeaders() }),
+      apiFetch<BaseResponse<PersonApiItem[]>>('/teachers?only_active=true', { headers: authHeaders() }),
+    ])
+
+    const merged = [
+      ...(Array.isArray(adminsRes.data) ? adminsRes.data : []),
+      ...(Array.isArray(staffsRes.data) ? staffsRes.data : []),
+      ...(Array.isArray(teachersRes.data) ? teachersRes.data : []),
+    ]
+
+    const seen = new Set<string>()
+    const options: Option[] = []
+    for (const item of merged) {
+      const name = displayName(item)
+      if (!name || seen.has(name)) continue
+      seen.add(name)
+      options.push({ value: name, label: name })
+    }
+    headOptions.value = options.sort((a, b) => a.label.localeCompare(b.label, 'th'))
+  }
+  catch {
+    headOptions.value = []
+  }
+}
+
+if (import.meta.client) {
+  loadRows()
+  loadHeadOptions()
+}
 
 const cols = [
   { key: 'code', label: 'รหัส' },
@@ -121,7 +233,7 @@ const showModal = ref(false)
 const isEditing = ref(false)
 let editTarget: DepartmentRow | null = null
 
-const emptyForm = (): DepartmentRow => ({ id: 0, name: '', code: '', head: '', description: '' })
+const emptyForm = (): DepartmentRow => ({ id: '', name: '', code: '', head: '', description: '' })
 const form = ref<DepartmentRow>(emptyForm())
 const formErrors = ref({ name: '', code: '' })
 
@@ -149,16 +261,42 @@ function openEdit(row: DepartmentRow) {
   showModal.value = true
 }
 
-function saveRow() {
+async function saveRow() {
   if (!validate()) return
-  if (isEditing.value && editTarget) {
-    const idx = rows.value.indexOf(editTarget)
-    if (idx !== -1) rows.value[idx] = { ...form.value }
+  if (!authToken.value || !profile.value.schoolId) return
+
+  const payload = {
+    school_id: profile.value.schoolId,
+    code: form.value.code.trim(),
+    name: form.value.name.trim(),
+    head: form.value.head.trim() || null,
+    description: form.value.description.trim() || null,
+    is_active: true,
   }
-  else {
-    rows.value.push({ ...form.value, id: Date.now() })
+
+  try {
+    if (isEditing.value && editTarget) {
+      const res = await apiFetch<BaseResponse<DepartmentApiItem>>(`/departments/${editTarget.id}`, {
+        method: 'PATCH',
+        headers: authHeaders(),
+        body: payload,
+      })
+      const idx = rows.value.findIndex(item => item.id === editTarget!.id)
+      if (idx !== -1) rows.value[idx] = mapRow(res.data)
+    }
+    else {
+      const res = await apiFetch<BaseResponse<DepartmentApiItem>>('/departments', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: payload,
+      })
+      rows.value.push(mapRow(res.data))
+    }
+    showModal.value = false
   }
-  showModal.value = false
+  catch {
+    formErrors.value.code = formErrors.value.code || 'บันทึกข้อมูลไม่สำเร็จ'
+  }
 }
 
 // ── Delete ──
@@ -170,12 +308,23 @@ function openDelete(row: DepartmentRow) {
   showConfirm.value = true
 }
 
-function confirmDelete() {
-  if (deleteTarget.value) {
+async function confirmDelete() {
+  if (!deleteTarget.value || !authToken.value) {
+    showConfirm.value = false
+    return
+  }
+
+  try {
+    await apiFetch(`/departments/${deleteTarget.value.id}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    })
     rows.value = rows.value.filter(r => r.id !== deleteTarget.value!.id)
     deleteTarget.value = null
   }
-  showConfirm.value = false
+  finally {
+    showConfirm.value = false
+  }
 }
 </script>
 
@@ -191,14 +340,14 @@ function confirmDelete() {
 .search-input { width: 100%; padding: 8px 12px 8px 32px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 0.875rem; font-family: inherit; outline: none; box-sizing: border-box; transition: border-color 0.15s; background: #fff; }
 .search-input:focus { border-color: #6366f1; }
 
-.action-btns { display: flex; gap: 6px; justify-content: flex-end; }
+.action-btns { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: nowrap; }
 .btn { display: inline-flex; align-items: center; gap: 6px; border-radius: 8px; padding: 8px 14px; font-size: 0.875rem; font-weight: 500; border: 1px solid #d1d5db; background: #fff; color: #111827; cursor: pointer; font-family: inherit; transition: background 0.12s; }
 .btn-primary { background: #111827; color: #fff; border-color: #111827; }
 .btn-primary:hover { background: #1f2937; }
 .btn-sm { padding: 5px 10px; font-size: 0.8rem; }
 .btn-edit { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
 .btn-edit:hover { background: #dbeafe; }
-.btn-danger { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
+.btn-danger { border-color: #fecaca; background: #fff5f5; color: #dc2626; }
 .btn-danger:hover { background: #fee2e2; }
 .btn-clear { border: 1px solid #e5e7eb; background: #fff; color: #6b7280; font-size: 0.8rem; padding: 7px 12px; white-space: nowrap; }
 .btn-clear:hover { background: #f9fafb; color: #374151; }

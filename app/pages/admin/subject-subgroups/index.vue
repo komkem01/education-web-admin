@@ -31,7 +31,7 @@
         </div>
         <select v-model="filterParent" class="filter-select">
           <option value="">ทุกกลุ่มสาระหลัก</option>
-          <option v-for="g in parentGroupOptions" :key="g" :value="g">{{ g }}</option>
+          <option v-for="g in parentGroupOptions" :key="g.value" :value="g.value">{{ g.label }}</option>
         </select>
         <button v-if="search || filterParent" type="button" class="btn btn-clear" @click="clearFilters">ล้างตัวกรอง</button>
       </div>
@@ -71,11 +71,11 @@
           </div>
           <div class="form-group">
             <label class="form-label">กลุ่มสาระหลัก <span class="req">*</span></label>
-            <select v-model="form.parentGroup" class="form-input">
+            <select v-model="form.parentGroupId" class="form-input">
               <option value="">-- เลือกกลุ่มสาระหลัก --</option>
-              <option v-for="g in parentGroupOptions" :key="g" :value="g">{{ g }}</option>
+              <option v-for="g in parentGroupOptions" :key="g.value" :value="g.value">{{ g.label }}</option>
             </select>
-            <span v-if="formErrors.parentGroup" class="field-error">{{ formErrors.parentGroup }}</span>
+            <span v-if="formErrors.parentGroupId" class="field-error">{{ formErrors.parentGroupId }}</span>
           </div>
           <div class="form-group form-group--full">
             <label class="form-label">คำอธิบาย</label>
@@ -96,15 +96,83 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useSubjectSubGroupsData, type SubjectSubGroupRow } from '~/composables/useSubjectSubGroupsData'
-import { useSubjectGroupsData } from '~/composables/useSubjectGroupsData'
+import { computed, ref } from 'vue'
 
 definePageMeta({ layout: 'admin' })
 
+type BaseResponse<T> = { data: T }
+
+type SubjectGroupApiItem = {
+  id: string
+  name: string
+}
+
+type SubjectSubgroupApiItem = {
+  id: string
+  subject_group_id: string
+  code: string
+  name: string
+  description: string | null
+}
+
+type SubjectSubGroupRow = {
+  id: string
+  code: string
+  name: string
+  parentGroupId: string
+  parentGroup: string
+  description: string
+}
+
 const { loading } = usePageLoad()
-const { rows } = useSubjectSubGroupsData()
-const { rows: subjectGroupRows } = useSubjectGroupsData()
+const config = useRuntimeConfig()
+const authToken = useCookie<string | null>('edu_auth_token')
+const rows = ref<SubjectSubGroupRow[]>([])
+const subjectGroupRows = ref<SubjectGroupApiItem[]>([])
+
+function authHeaders() {
+  return { Authorization: `Bearer ${authToken.value}` }
+}
+
+async function apiFetch<T>(path: string, options?: Parameters<typeof $fetch<T>>[1]) {
+  try {
+    return await $fetch<T>(`${config.public.apiBase}/back-office${path}`, options)
+  }
+  catch {
+    return await $fetch<T>(`${config.public.apiBase}${path}`, options)
+  }
+}
+
+function mapRow(item: SubjectSubgroupApiItem): SubjectSubGroupRow {
+  const parent = subjectGroupRows.value.find(group => group.id === item.subject_group_id)
+  return {
+    id: item.id,
+    code: item.code,
+    name: item.name,
+    parentGroupId: item.subject_group_id,
+    parentGroup: parent?.name || '-',
+    description: (item.description || '').trim(),
+  }
+}
+
+async function loadRows() {
+  if (!import.meta.client || !authToken.value) return
+  try {
+    const [groupsRes, subgroupsRes] = await Promise.all([
+      apiFetch<BaseResponse<SubjectGroupApiItem[]>>('/subject-groups?only_active=false', { headers: authHeaders() }),
+      apiFetch<BaseResponse<SubjectSubgroupApiItem[]>>('/subject-subgroups?only_active=false', { headers: authHeaders() }),
+    ])
+
+    subjectGroupRows.value = Array.isArray(groupsRes.data) ? groupsRes.data : []
+    rows.value = (Array.isArray(subgroupsRes.data) ? subgroupsRes.data : []).map(mapRow)
+  }
+  catch {
+    subjectGroupRows.value = []
+    rows.value = []
+  }
+}
+
+if (import.meta.client) loadRows()
 
 const cols = [
   { key: 'code', label: 'รหัส' },
@@ -114,7 +182,7 @@ const cols = [
 ]
 
 // ── Parent group options (from subject groups composable) ──
-const parentGroupOptions = computed(() => subjectGroupRows.value.map(r => r.name))
+const parentGroupOptions = computed(() => subjectGroupRows.value.map(r => ({ value: r.id, label: r.name })))
 
 // ── Filters ──
 const search = ref('')
@@ -124,7 +192,7 @@ const filteredRows = computed(() => {
   let data = rows.value
   const q = search.value.toLowerCase().trim()
   if (q) data = data.filter(r => r.name.toLowerCase().includes(q) || r.code.toLowerCase().includes(q) || r.parentGroup.toLowerCase().includes(q))
-  if (filterParent.value) data = data.filter(r => r.parentGroup === filterParent.value)
+  if (filterParent.value) data = data.filter(r => r.parentGroupId === filterParent.value)
   return data
 })
 
@@ -138,16 +206,16 @@ const showModal = ref(false)
 const isEditing = ref(false)
 let editTarget: SubjectSubGroupRow | null = null
 
-const emptyForm = (): SubjectSubGroupRow => ({ id: 0, name: '', code: '', parentGroup: '', description: '' })
+const emptyForm = (): SubjectSubGroupRow => ({ id: '', name: '', code: '', parentGroupId: '', parentGroup: '', description: '' })
 const form = ref<SubjectSubGroupRow>(emptyForm())
-const formErrors = ref({ name: '', code: '', parentGroup: '' })
+const formErrors = ref({ name: '', code: '', parentGroupId: '' })
 
 function validate() {
-  formErrors.value = { name: '', code: '', parentGroup: '' }
+  formErrors.value = { name: '', code: '', parentGroupId: '' }
   let ok = true
   if (!form.value.name.trim()) { formErrors.value.name = 'กรุณาระบุชื่อกลุ่มย่อย'; ok = false }
   if (!form.value.code.trim()) { formErrors.value.code = 'กรุณาระบุรหัส'; ok = false }
-  if (!form.value.parentGroup) { formErrors.value.parentGroup = 'กรุณาเลือกกลุ่มสาระหลัก'; ok = false }
+  if (!form.value.parentGroupId) { formErrors.value.parentGroupId = 'กรุณาเลือกกลุ่มสาระหลัก'; ok = false }
   return ok
 }
 
@@ -155,7 +223,7 @@ function openAdd() {
   isEditing.value = false
   editTarget = null
   form.value = emptyForm()
-  formErrors.value = { name: '', code: '', parentGroup: '' }
+  formErrors.value = { name: '', code: '', parentGroupId: '' }
   showModal.value = true
 }
 
@@ -163,20 +231,46 @@ function openEdit(row: SubjectSubGroupRow) {
   isEditing.value = true
   editTarget = row
   form.value = { ...row }
-  formErrors.value = { name: '', code: '', parentGroup: '' }
+  formErrors.value = { name: '', code: '', parentGroupId: '' }
   showModal.value = true
 }
 
-function saveRow() {
+async function saveRow() {
   if (!validate()) return
-  if (isEditing.value && editTarget) {
-    const idx = rows.value.indexOf(editTarget)
-    if (idx !== -1) rows.value[idx] = { ...form.value }
+
+  if (!authToken.value) return
+
+  const payload = {
+    subject_group_id: form.value.parentGroupId,
+    code: form.value.code.trim(),
+    name: form.value.name.trim(),
+    description: form.value.description.trim() || null,
+    is_active: true,
   }
-  else {
-    rows.value.push({ ...form.value, id: Date.now() })
+
+  try {
+    if (isEditing.value && editTarget) {
+      const res = await apiFetch<BaseResponse<SubjectSubgroupApiItem>>(`/subject-subgroups/${editTarget.id}`, {
+        method: 'PATCH',
+        headers: authHeaders(),
+        body: payload,
+      })
+      const idx = rows.value.findIndex(item => item.id === editTarget!.id)
+      if (idx !== -1) rows.value[idx] = mapRow(res.data)
+    }
+    else {
+      const res = await apiFetch<BaseResponse<SubjectSubgroupApiItem>>('/subject-subgroups', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: payload,
+      })
+      rows.value.push(mapRow(res.data))
+    }
+    showModal.value = false
   }
-  showModal.value = false
+  catch {
+    formErrors.value.code = formErrors.value.code || 'บันทึกข้อมูลไม่สำเร็จ'
+  }
 }
 
 // ── Delete ──
@@ -188,12 +282,23 @@ function openDelete(row: SubjectSubGroupRow) {
   showConfirm.value = true
 }
 
-function confirmDelete() {
-  if (deleteTarget.value) {
+async function confirmDelete() {
+  if (!deleteTarget.value || !authToken.value) {
+    showConfirm.value = false
+    return
+  }
+
+  try {
+    await apiFetch(`/subject-subgroups/${deleteTarget.value.id}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    })
     rows.value = rows.value.filter(r => r.id !== deleteTarget.value!.id)
     deleteTarget.value = null
   }
-  showConfirm.value = false
+  finally {
+    showConfirm.value = false
+  }
 }
 </script>
 
@@ -210,14 +315,14 @@ function confirmDelete() {
 .search-input:focus { border-color: #6366f1; }
 .filter-select { padding: 8px 12px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 0.875rem; font-family: inherit; outline: none; background: #fff; cursor: pointer; }
 
-.action-btns { display: flex; gap: 6px; justify-content: flex-end; }
+.action-btns { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: nowrap; }
 .btn { display: inline-flex; align-items: center; gap: 6px; border-radius: 8px; padding: 8px 14px; font-size: 0.875rem; font-weight: 500; border: 1px solid #d1d5db; background: #fff; color: #111827; cursor: pointer; font-family: inherit; transition: background 0.12s; }
 .btn-primary { background: #111827; color: #fff; border-color: #111827; }
 .btn-primary:hover { background: #1f2937; }
 .btn-sm { padding: 5px 10px; font-size: 0.8rem; }
 .btn-edit { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
 .btn-edit:hover { background: #dbeafe; }
-.btn-danger { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
+.btn-danger { border-color: #fecaca; background: #fff5f5; color: #dc2626; }
 .btn-danger:hover { background: #fee2e2; }
 .btn-clear { border: 1px solid #e5e7eb; background: #fff; color: #6b7280; font-size: 0.8rem; padding: 7px 12px; white-space: nowrap; }
 .btn-clear:hover { background: #f9fafb; color: #374151; }

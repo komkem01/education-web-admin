@@ -38,6 +38,15 @@
 
       <!-- Table -->
       <AdminDataTable title="รายการประกาศ" :columns="cols" :rows="filteredRows">
+        <template #cell-publishedAt="{ value }">
+          {{ formatDateTH(value as string) }}
+        </template>
+        <template #cell-announcedAt="{ value }">
+          {{ formatDateTH(value as string) }}
+        </template>
+        <template #cell-expiresAt="{ value }">
+          {{ formatDateTH(value as string) }}
+        </template>
         <template #cell-isPinned="{ value }">
           <span v-if="value" class="pin-badge">📌 ปักหมุด</span>
           <span v-else class="no-pin">—</span>
@@ -72,8 +81,9 @@
           <div class="detail-info">
             <div class="detail-row"><span class="d-label">กลุ่มเป้าหมาย</span><span class="d-val">{{ detailTarget.target }}</span></div>
             <div class="detail-row"><span class="d-label">ผู้ประกาศ</span><span class="d-val">{{ detailTarget.createdBy }}</span></div>
-            <div class="detail-row"><span class="d-label">วันที่เผยแพร่</span><span class="d-val">{{ detailTarget.publishedAt || '—' }}</span></div>
-            <div class="detail-row"><span class="d-label">วันหมดอายุ</span><span class="d-val">{{ detailTarget.expiresAt || '—' }}</span></div>
+            <div class="detail-row"><span class="d-label">วันที่ประกาศ</span><span class="d-val">{{ formatDateTH(detailTarget.announcedAt) }}</span></div>
+            <div class="detail-row"><span class="d-label">วันที่เผยแพร่</span><span class="d-val">{{ formatDateTH(detailTarget.publishedAt) }}</span></div>
+            <div class="detail-row"><span class="d-label">วันหมดอายุ</span><span class="d-val">{{ formatDateTH(detailTarget.expiresAt) }}</span></div>
           </div>
           <div class="detail-content">{{ detailTarget.content }}</div>
         </div>
@@ -106,6 +116,10 @@
             </select>
           </div>
           <div class="form-group">
+            <label class="form-label">วันที่ประกาศ</label>
+            <input v-model="form.announcedAt" type="date" class="form-input" />
+          </div>
+          <div class="form-group">
             <label class="form-label">วันที่เผยแพร่</label>
             <input v-model="form.publishedAt" type="date" class="form-input" />
           </div>
@@ -132,10 +146,6 @@
             <textarea v-model="form.content" class="form-input form-textarea" rows="5" placeholder="รายละเอียดประกาศ..." />
             <span v-if="formErrors.content" class="field-error">{{ formErrors.content }}</span>
           </div>
-          <div class="form-group form-group--full">
-            <label class="form-label">ผู้ประกาศ</label>
-            <input v-model="form.createdBy" class="form-input" placeholder="ฝ่าย/ชื่อผู้ประกาศ" />
-          </div>
         </div>
       </AdminAppModal>
 
@@ -152,11 +162,136 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useAnnouncementsData, type AnnouncementRow, type AnnouncementCategory, type AnnouncementTarget, type AnnouncementStatus } from '~/composables/useAnnouncementsData'
+
+type BaseResponse<T> = { data: T }
+
+type AnnouncementCategory = 'ทั่วไป' | 'วิชาการ' | 'กิจกรรม' | 'งานบุคคล' | 'ฉุกเฉิน'
+type AnnouncementTarget = 'ทุกคน' | 'ครู' | 'นักเรียน' | 'ผู้ปกครอง'
+type AnnouncementStatus = 'เผยแพร่' | 'ฉบับร่าง' | 'หมดอายุ'
+
+type AnnouncementRow = {
+  id: string
+  title: string
+  content: string
+  category: AnnouncementCategory
+  target: AnnouncementTarget
+  announcedAt: string
+  publishedAt: string
+  expiresAt: string
+  isPinned: boolean
+  status: AnnouncementStatus
+  createdBy: string
+}
+
+type AnnouncementApiItem = {
+  id: string
+  school_id: string
+  author_member_id: string
+  title: string | null
+  content: string | null
+  category: string | null
+  status: 'draft' | 'published' | 'expired'
+  announced_at: string | null
+  published_at: string | null
+  expires_at: string | null
+  created_by_name: string | null
+  target_role: 'teacher' | 'student' | 'parent' | 'admin' | 'staff' | null
+  is_pinned: boolean
+}
 
 definePageMeta({ layout: 'admin' })
 const { loading } = usePageLoad()
-const { rows } = useAnnouncementsData()
+const config = useRuntimeConfig()
+const authToken = useCookie<string | null>('edu_auth_token')
+const { profile } = useAdminAuth()
+const rows = ref<AnnouncementRow[]>([])
+
+const announcerDisplayName = computed(() => {
+  const first = (profile.value.firstName || '').trim()
+  const last = (profile.value.lastName || '').trim()
+  const fullName = `${first} ${last}`.trim()
+  if (fullName) return fullName
+  if (profile.value.email) return profile.value.email
+  if (profile.value.memberCode) return profile.value.memberCode
+  if (profile.value.memberId) return profile.value.memberId.slice(0, 8)
+  return 'ผู้ใช้งานระบบ'
+})
+
+const targetToApi: Record<AnnouncementTarget, AnnouncementApiItem['target_role']> = {
+  'ทุกคน': null,
+  ครู: 'teacher',
+  นักเรียน: 'student',
+  ผู้ปกครอง: 'parent',
+}
+
+const statusToApi: Record<AnnouncementStatus, AnnouncementApiItem['status']> = {
+  'ฉบับร่าง': 'draft',
+  เผยแพร่: 'published',
+  หมดอายุ: 'expired',
+}
+
+function toTargetLabel(target: AnnouncementApiItem['target_role']): AnnouncementTarget {
+  if (target === 'teacher') return 'ครู'
+  if (target === 'student') return 'นักเรียน'
+  if (target === 'parent') return 'ผู้ปกครอง'
+  return 'ทุกคน'
+}
+
+function toStatusLabel(status: AnnouncementApiItem['status']): AnnouncementStatus {
+  if (status === 'draft') return 'ฉบับร่าง'
+  if (status === 'expired') return 'หมดอายุ'
+  return 'เผยแพร่'
+}
+
+function formatDateTH(value: string) {
+  if (!value) return '—'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+
+function authHeaders() {
+  return { Authorization: `Bearer ${authToken.value}` }
+}
+
+async function apiFetch<T>(path: string, options?: Parameters<typeof $fetch<T>>[1]) {
+  try {
+    return await $fetch<T>(`${config.public.apiBase}/back-office${path}`, options)
+  }
+  catch {
+    return await $fetch<T>(`${config.public.apiBase}${path}`, options)
+  }
+}
+
+function mapRow(item: AnnouncementApiItem): AnnouncementRow {
+  const category = (item.category || 'ทั่วไป') as AnnouncementCategory
+  return {
+    id: item.id,
+    title: (item.title || '').trim(),
+    content: (item.content || '').trim(),
+    category: categories.includes(category) ? category : 'ทั่วไป',
+    target: toTargetLabel(item.target_role),
+    announcedAt: item.announced_at || '',
+    publishedAt: item.published_at || '',
+    expiresAt: item.expires_at || '',
+    isPinned: item.is_pinned,
+    status: toStatusLabel(item.status),
+    createdBy: (item.created_by_name || '').trim(),
+  }
+}
+
+async function loadRows() {
+  if (!import.meta.client || !authToken.value || !profile.value.schoolId) return
+  try {
+    const res = await apiFetch<BaseResponse<AnnouncementApiItem[]>>(`/school-announcements?school_id=${profile.value.schoolId}&page=1&size=300&sort_by=created_at&order_by=desc`, { headers: authHeaders() })
+    rows.value = (Array.isArray(res.data) ? res.data : []).map(mapRow)
+  }
+  catch {
+    rows.value = []
+  }
+}
+
+if (import.meta.client) loadRows()
 
 const categories: AnnouncementCategory[] = ['ทั่วไป', 'วิชาการ', 'กิจกรรม', 'งานบุคคล', 'ฉุกเฉิน']
 const targets: AnnouncementTarget[] = ['ทุกคน', 'ครู', 'นักเรียน', 'ผู้ปกครอง']
@@ -165,6 +300,7 @@ const cols = [
   { key: 'title', label: 'หัวข้อ' },
   { key: 'category', label: 'หมวดหมู่' },
   { key: 'target', label: 'กลุ่มเป้าหมาย' },
+  { key: 'announcedAt', label: 'วันที่ประกาศ' },
   { key: 'publishedAt', label: 'วันที่เผยแพร่' },
   { key: 'expiresAt', label: 'วันหมดอายุ' },
   { key: 'isPinned', label: 'ปักหมุด' },
@@ -208,9 +344,10 @@ const isEditing = ref(false)
 let editTarget: AnnouncementRow | null = null
 
 const emptyForm = (): AnnouncementRow => ({
-  id: 0, title: '', content: '', category: 'ทั่วไป', target: 'ทุกคน',
+  id: '', title: '', content: '', category: 'ทั่วไป', target: 'ทุกคน',
+  announcedAt: new Date().toISOString().slice(0, 10),
   publishedAt: new Date().toISOString().slice(0, 10), expiresAt: '',
-  isPinned: false, status: 'เผยแพร่', createdBy: '',
+  isPinned: false, status: 'เผยแพร่', createdBy: announcerDisplayName.value,
 })
 const form = ref<AnnouncementRow>(emptyForm())
 const formErrors = ref({ title: '', content: '' })
@@ -233,20 +370,57 @@ function openAdd() {
 function openEdit(row: AnnouncementRow) {
   isEditing.value = true
   editTarget = row
-  form.value = { ...row }
+  form.value = { ...row, createdBy: announcerDisplayName.value }
   formErrors.value = { title: '', content: '' }
   showModal.value = true
 }
 
-function saveRow() {
+async function saveRow() {
   if (!validate()) return
-  if (isEditing.value && editTarget) {
-    const idx = rows.value.indexOf(editTarget)
-    if (idx !== -1) rows.value[idx] = { ...form.value }
-  } else {
-    rows.value.unshift({ ...form.value, id: Date.now() })
+
+  if (!authToken.value || !profile.value.schoolId || !profile.value.memberId) {
+    formErrors.value.title = 'ไม่พบข้อมูลผู้ใช้สำหรับบันทึกประกาศ'
+    return
   }
-  showModal.value = false
+
+  const payload = {
+    school_id: profile.value.schoolId,
+    author_member_id: profile.value.memberId,
+    title: form.value.title.trim() || null,
+    content: form.value.content.trim() || null,
+    category: form.value.category,
+    status: statusToApi[form.value.status],
+    announced_at: form.value.announcedAt || null,
+    published_at: form.value.publishedAt || null,
+    expires_at: form.value.expiresAt || null,
+    created_by_name: announcerDisplayName.value,
+    target_role: targetToApi[form.value.target],
+    is_pinned: form.value.isPinned,
+  }
+
+  try {
+    if (isEditing.value && editTarget) {
+      const res = await apiFetch<BaseResponse<AnnouncementApiItem>>(`/school-announcements/${editTarget.id}`, {
+        method: 'PATCH',
+        headers: authHeaders(),
+        body: payload,
+      })
+      const idx = rows.value.findIndex(item => item.id === editTarget!.id)
+      if (idx !== -1) rows.value[idx] = mapRow(res.data)
+    }
+    else {
+      const res = await apiFetch<BaseResponse<AnnouncementApiItem>>('/school-announcements', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: payload,
+      })
+      rows.value.unshift(mapRow(res.data))
+    }
+    showModal.value = false
+  }
+  catch {
+    formErrors.value.title = formErrors.value.title || 'บันทึกประกาศไม่สำเร็จ'
+  }
 }
 
 // ── Delete ──
@@ -258,10 +432,23 @@ function openDelete(row: AnnouncementRow) {
   showConfirm.value = true
 }
 
-function confirmDelete() {
-  if (deleteTarget.value) rows.value = rows.value.filter(r => r !== deleteTarget.value)
-  showConfirm.value = false
-  deleteTarget.value = null
+async function confirmDelete() {
+  if (!deleteTarget.value || !authToken.value) {
+    showConfirm.value = false
+    return
+  }
+
+  try {
+    await apiFetch(`/school-announcements/${deleteTarget.value.id}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    })
+    rows.value = rows.value.filter(r => r.id !== deleteTarget.value!.id)
+    deleteTarget.value = null
+  }
+  finally {
+    showConfirm.value = false
+  }
 }
 </script>
 
@@ -276,7 +463,7 @@ function confirmDelete() {
 .search-input { width: 100%; padding: 8px 12px 8px 32px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 0.875rem; font-family: inherit; outline: none; box-sizing: border-box; background: #fff; }
 .search-input:focus { border-color: #6366f1; }
 .filter-select { padding: 8px 12px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 0.875rem; font-family: inherit; outline: none; background: #fff; cursor: pointer; }
-.action-btns { display: flex; gap: 6px; justify-content: flex-end; }
+.action-btns { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: nowrap; }
 .btn { display: inline-flex; align-items: center; gap: 6px; border-radius: 8px; padding: 8px 14px; font-size: 0.875rem; font-weight: 500; border: 1px solid #d1d5db; background: #fff; color: #111827; cursor: pointer; font-family: inherit; transition: background 0.12s; }
 .btn-primary { background: #111827; color: #fff; border-color: #111827; }
 .btn-primary:hover { background: #1f2937; }
@@ -285,7 +472,7 @@ function confirmDelete() {
 .btn-detail:hover { background: #f9fafb; }
 .btn-edit { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
 .btn-edit:hover { background: #dbeafe; }
-.btn-danger { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
+.btn-danger { border-color: #fecaca; background: #fff5f5; color: #dc2626; }
 .btn-danger:hover { background: #fee2e2; }
 .btn-clear { border: 1px solid #e5e7eb; background: #fff; color: #6b7280; font-size: 0.8rem; padding: 7px 12px; border-radius: 8px; font-family: inherit; cursor: pointer; }
 .btn-clear:hover { background: #f9fafb; }

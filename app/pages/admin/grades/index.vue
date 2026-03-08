@@ -173,22 +173,243 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
-import { useGradesData, getTotal, getGrade, getStatus, type GradeRow } from '~/composables/useGradesData'
-import { useClassroomsData } from '~/composables/useClassroomsData'
-import { useCoursesData } from '~/composables/useCoursesData'
+import { computed, ref, watch } from 'vue'
 
 definePageMeta({ layout: 'admin' })
 
+type BaseResponse<T> = { data: T }
+
+type StudentApiItem = {
+  id: string
+  current_classroom_id: string | null
+  student_code: string | null
+  first_name: string | null
+  last_name: string | null
+}
+
+type ClassroomApiItem = {
+  id: string
+  name: string
+  grade_level: string | null
+  room_no: string | null
+}
+
+type SubjectApiItem = {
+  id: string
+  subject_code: string | null
+  name: string
+}
+
+type SubjectAssignmentApiItem = {
+  id: string
+  subject_id: string
+  classroom_id: string
+  semester_no: number
+}
+
+type StudentEnrollmentApiItem = {
+  id: string
+  subject_assignment_id: string
+}
+
+type GradeItemApiItem = {
+  id: string
+  subject_assignment_id: string
+  name: string | null
+}
+
+type GradeRecordApiItem = {
+  id: string
+  enrollment_id: string
+  grade_item_id: string
+  score: number | null
+}
+
+type GradeRow = {
+  id: string
+  studentUUID: string
+  studentId: string
+  studentName: string
+  classroom: string
+  courseCode: string
+  courseName: string
+  semester: string
+  year: string
+  subjectAssignmentId: string
+  enrollmentId: string
+  midItemId: string
+  finalItemId: string
+  activityItemId: string
+  midRecordId: string
+  finalRecordId: string
+  activityRecordId: string
+  midScore: number | null
+  finalScore: number | null
+  activityScore: number | null
+}
+
 const { loading } = usePageLoad()
-const { rows } = useGradesData()
-const { rows: classroomRows } = useClassroomsData()
-const { rows: courseRows } = useCoursesData()
+const config = useRuntimeConfig()
+const authToken = useCookie<string | null>('edu_auth_token')
+const { profile } = useAdminAuth()
+
+const rows = ref<GradeRow[]>([])
+const pageLoading = ref(false)
+const errorMessage = ref('')
+
+function getTotal(r: GradeRow): number | null {
+  if (r.midScore === null && r.finalScore === null && r.activityScore === null) return null
+  return (r.midScore ?? 0) + (r.finalScore ?? 0) + (r.activityScore ?? 0)
+}
+
+function getGrade(r: GradeRow): string {
+  const total = getTotal(r)
+  if (total === null) return 'รอผล'
+  if (total >= 80) return '4'
+  if (total >= 75) return '3.5'
+  if (total >= 70) return '3'
+  if (total >= 65) return '2.5'
+  if (total >= 60) return '2'
+  if (total >= 55) return '1.5'
+  if (total >= 50) return '1'
+  return '0'
+}
+
+function getStatus(r: GradeRow): 'ผ่าน' | 'ไม่ผ่าน' | 'รอผล' {
+  const total = getTotal(r)
+  if (total === null) return 'รอผล'
+  return total >= 50 ? 'ผ่าน' : 'ไม่ผ่าน'
+}
+
+function authHeaders() {
+  return { Authorization: `Bearer ${authToken.value}` }
+}
+
+async function apiFetch<T>(path: string, options?: Parameters<typeof $fetch<T>>[1]) {
+  try {
+    return await $fetch<T>(`${config.public.apiBase}/back-office${path}`, options)
+  }
+  catch {
+    return await $fetch<T>(`${config.public.apiBase}${path}`, options)
+  }
+}
+
+function itemCategory(name: string): 'mid' | 'final' | 'activity' | 'other' {
+  const key = name.trim().toLowerCase()
+  if (!key) return 'other'
+  if (key.includes('กลาง') || key.includes('mid')) return 'mid'
+  if (key.includes('ปลาย') || key.includes('final')) return 'final'
+  if (key.includes('กิจกรรม') || key.includes('activity') || key.includes('เก็บ')) return 'activity'
+  return 'other'
+}
+
+async function loadRows() {
+  if (!import.meta.client || !authToken.value) return
+
+  pageLoading.value = true
+  errorMessage.value = ''
+
+  try {
+    const schoolID = profile.value.schoolId
+    const schoolQuery = schoolID ? `?school_id=${schoolID}` : ''
+    const [studentsRes, classroomsRes, subjectsRes, assignmentsRes] = await Promise.all([
+      apiFetch<BaseResponse<StudentApiItem[]>>('/students?only_active=true', { headers: authHeaders() }),
+      apiFetch<BaseResponse<ClassroomApiItem[]>>(`/classrooms${schoolQuery}`, { headers: authHeaders() }),
+      apiFetch<BaseResponse<SubjectApiItem[]>>(`/subjects${schoolQuery}`, { headers: authHeaders() }),
+      apiFetch<BaseResponse<SubjectAssignmentApiItem[]>>('/subject-assignments?only_active=true', { headers: authHeaders() }),
+    ])
+
+    const students = Array.isArray(studentsRes.data) ? studentsRes.data : []
+    const classrooms = Array.isArray(classroomsRes.data) ? classroomsRes.data : []
+    const subjects = Array.isArray(subjectsRes.data) ? subjectsRes.data : []
+    const assignments = Array.isArray(assignmentsRes.data) ? assignmentsRes.data : []
+
+    const classroomNameByID = new Map(classrooms.map(item => [item.id, item.name || `${item.grade_level || ''} ${item.room_no || ''}`.trim() || item.id] as const))
+    const subjectByID = new Map(subjects.map(item => [item.id, item] as const))
+    const assignmentByID = new Map(assignments.map(item => [item.id, item] as const))
+
+    const rowsByStudent = await Promise.all(students.map(async (student) => {
+      const [enrollmentsRes, gradeItemsRes, gradeRecordsRes] = await Promise.all([
+        apiFetch<BaseResponse<StudentEnrollmentApiItem[]>>(`/students/${student.id}/enrollments`, { headers: authHeaders() }),
+        apiFetch<BaseResponse<GradeItemApiItem[]>>(`/students/${student.id}/grade-items`, { headers: authHeaders() }),
+        apiFetch<BaseResponse<GradeRecordApiItem[]>>(`/students/${student.id}/grade-records`, { headers: authHeaders() }),
+      ])
+
+      const enrollments = Array.isArray(enrollmentsRes.data) ? enrollmentsRes.data : []
+      const gradeItems = Array.isArray(gradeItemsRes.data) ? gradeItemsRes.data : []
+      const gradeRecords = Array.isArray(gradeRecordsRes.data) ? gradeRecordsRes.data : []
+
+      const enrollmentByAssignmentID = new Map(enrollments.map(item => [item.subject_assignment_id, item] as const))
+      const recordsByItemID = new Map(gradeRecords.map(item => [item.grade_item_id, item] as const))
+      const studentName = `${(student.first_name || '').trim()} ${(student.last_name || '').trim()}`.trim() || '-'
+      const studentCode = (student.student_code || '').trim() || student.id
+      const classroom = (student.current_classroom_id && classroomNameByID.get(student.current_classroom_id)) || '-'
+
+      return enrollments
+        .map((enrollment) => {
+          const assignment = assignmentByID.get(enrollment.subject_assignment_id)
+          if (!assignment) return null
+
+          const subject = subjectByID.get(assignment.subject_id)
+          const itemByCategory = new Map<'mid' | 'final' | 'activity', GradeItemApiItem>()
+          gradeItems
+            .filter(item => item.subject_assignment_id === assignment.id)
+            .forEach((item) => {
+              const category = itemCategory(item.name || '')
+              if (category !== 'other' && !itemByCategory.has(category)) itemByCategory.set(category, item)
+            })
+
+          const midItem = itemByCategory.get('mid')
+          const finalItem = itemByCategory.get('final')
+          const activityItem = itemByCategory.get('activity')
+          const midRecord = midItem ? recordsByItemID.get(midItem.id) : undefined
+          const finalRecord = finalItem ? recordsByItemID.get(finalItem.id) : undefined
+          const activityRecord = activityItem ? recordsByItemID.get(activityItem.id) : undefined
+
+          return {
+            id: `${student.id}:${assignment.id}`,
+            studentUUID: student.id,
+            studentId: studentCode,
+            studentName,
+            classroom,
+            courseCode: (subject?.subject_code || '').trim() || assignment.subject_id,
+            courseName: (subject?.name || '-').trim(),
+            semester: String(assignment.semester_no || 1),
+            year: '-',
+            subjectAssignmentId: assignment.id,
+            enrollmentId: enrollment.id,
+            midItemId: midItem?.id || '',
+            finalItemId: finalItem?.id || '',
+            activityItemId: activityItem?.id || '',
+            midRecordId: midRecord?.id || '',
+            finalRecordId: finalRecord?.id || '',
+            activityRecordId: activityRecord?.id || '',
+            midScore: midRecord?.score ?? null,
+            finalScore: finalRecord?.score ?? null,
+            activityScore: activityRecord?.score ?? null,
+          } as GradeRow
+        })
+        .filter((item): item is GradeRow => Boolean(item))
+    }))
+
+    rows.value = rowsByStudent.flat()
+  }
+  catch {
+    errorMessage.value = 'ไม่สามารถโหลดข้อมูลผลการเรียนได้'
+    rows.value = []
+  }
+  finally {
+    pageLoading.value = false
+  }
+}
+
+if (import.meta.client) {
+  loadRows()
+}
 
 const classroomOptions = computed(() => [...new Set(rows.value.map(r => r.classroom))].sort())
 const courseOptions = computed(() => [...new Set(rows.value.map(r => r.courseName))].sort())
 
-// ── Filters ──
 const search = ref('')
 const filterClassroom = ref('')
 const filterCourse = ref('')
@@ -196,7 +417,7 @@ const filterSemester = ref('')
 
 const filteredRows = computed(() => {
   const q = search.value.toLowerCase().trim()
-  return rows.value.filter(r => {
+  return rows.value.filter((r) => {
     if (q && !r.studentName.toLowerCase().includes(q) && !r.studentId.toLowerCase().includes(q)) return false
     if (filterClassroom.value && r.classroom !== filterClassroom.value) return false
     if (filterCourse.value && r.courseName !== filterCourse.value) return false
@@ -205,7 +426,6 @@ const filteredRows = computed(() => {
   })
 })
 
-// ── Summary ──
 const passCount = computed(() => filteredRows.value.filter(r => getStatus(r) === 'ผ่าน').length)
 const failCount = computed(() => filteredRows.value.filter(r => getStatus(r) === 'ไม่ผ่าน').length)
 const pendingCount = computed(() => filteredRows.value.filter(r => getStatus(r) === 'รอผล').length)
@@ -223,30 +443,28 @@ function clearFilters() {
   filterSemester.value = ''
 }
 
-// ── Pagination ──
 const pageSize = ref(10)
 const currentPage = ref(1)
 watch(() => filteredRows.value, () => { currentPage.value = 1 })
 watch(pageSize, () => { currentPage.value = 1 })
 const totalPages = computed(() => Math.max(1, Math.ceil(filteredRows.value.length / pageSize.value)))
-const rangeStart = computed(() => filteredRows.value.length === 0 ? 0 : (currentPage.value - 1) * pageSize.value + 1)
+const rangeStart = computed(() => (filteredRows.value.length === 0 ? 0 : (currentPage.value - 1) * pageSize.value + 1))
 const rangeEnd = computed(() => Math.min(currentPage.value * pageSize.value, filteredRows.value.length))
 const pagedRows = computed(() => filteredRows.value.slice((currentPage.value - 1) * pageSize.value, currentPage.value * pageSize.value))
-const pageNumbers = computed<(number | '\u2026')[]>(() => {
+const pageNumbers = computed<(number | '…')[]>(() => {
   const total = totalPages.value
   const cur = currentPage.value
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
-  const pages: (number | '\u2026')[] = []
-  const add = (n: number | '\u2026') => { if (pages[pages.length - 1] !== n) pages.push(n) }
+  const pages: (number | '…')[] = []
+  const add = (n: number | '…') => { if (pages[pages.length - 1] !== n) pages.push(n) }
   add(1)
-  if (cur > 3) add('\u2026')
+  if (cur > 3) add('…')
   for (let i = Math.max(2, cur - 1); i <= Math.min(total - 1, cur + 1); i++) add(i)
-  if (cur < total - 2) add('\u2026')
+  if (cur < total - 2) add('…')
   add(total)
   return pages
 })
 
-// ── Edit Score ──
 const showModal = ref(false)
 const editTarget = ref<GradeRow | null>(null)
 const scoreForm = ref({ midScore: null as number | null, finalScore: null as number | null, activityScore: null as number | null })
@@ -257,13 +475,82 @@ function openEdit(row: GradeRow) {
   showModal.value = true
 }
 
-function saveScore() {
-  if (!editTarget.value) return
-  const idx = rows.value.findIndex(r => r.id === editTarget.value!.id)
-  if (idx !== -1) {
-    rows.value[idx] = { ...rows.value[idx], ...scoreForm.value }
+async function ensureGradeItem(studentID: string, assignmentID: string, currentItemID: string, name: string, maxScore: number, weightPercentage: number) {
+  if (currentItemID) return currentItemID
+  const created = await apiFetch<BaseResponse<GradeItemApiItem>>(`/students/${studentID}/grade-items`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: {
+      subject_assignment_id: assignmentID,
+      name,
+      max_score: maxScore,
+      weight_percentage: weightPercentage,
+    },
+  })
+  return created.data.id
+}
+
+async function upsertGradeRecord(studentID: string, enrollmentID: string, itemID: string, recordID: string, score: number | null) {
+  const payload = {
+    enrollment_id: enrollmentID,
+    grade_item_id: itemID,
+    score,
+    teacher_note: null,
   }
-  showModal.value = false
+  if (recordID) {
+    const updated = await apiFetch<BaseResponse<GradeRecordApiItem>>(`/students/${studentID}/grade-records/${recordID}`, {
+      method: 'PATCH',
+      headers: authHeaders(),
+      body: payload,
+    })
+    return updated.data
+  }
+  const created = await apiFetch<BaseResponse<GradeRecordApiItem>>(`/students/${studentID}/grade-records`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: payload,
+  })
+  return created.data
+}
+
+async function saveScore() {
+  if (!editTarget.value || !authToken.value) return
+
+  const target = editTarget.value
+  if (!target.enrollmentId || !target.subjectAssignmentId) return
+
+  try {
+    const midItemID = await ensureGradeItem(target.studentUUID, target.subjectAssignmentId, target.midItemId, 'กลางภาค', 30, 30)
+    const finalItemID = await ensureGradeItem(target.studentUUID, target.subjectAssignmentId, target.finalItemId, 'ปลายภาค', 40, 40)
+    const activityItemID = await ensureGradeItem(target.studentUUID, target.subjectAssignmentId, target.activityItemId, 'กิจกรรม', 20, 20)
+
+    const [midRecord, finalRecord, activityRecord] = await Promise.all([
+      upsertGradeRecord(target.studentUUID, target.enrollmentId, midItemID, target.midRecordId, scoreForm.value.midScore),
+      upsertGradeRecord(target.studentUUID, target.enrollmentId, finalItemID, target.finalRecordId, scoreForm.value.finalScore),
+      upsertGradeRecord(target.studentUUID, target.enrollmentId, activityItemID, target.activityRecordId, scoreForm.value.activityScore),
+    ])
+
+    const idx = rows.value.findIndex(item => item.id === target.id)
+    if (idx !== -1) {
+      rows.value[idx] = {
+        ...rows.value[idx],
+        midItemId: midItemID,
+        finalItemId: finalItemID,
+        activityItemId: activityItemID,
+        midRecordId: midRecord.id,
+        finalRecordId: finalRecord.id,
+        activityRecordId: activityRecord.id,
+        midScore: midRecord.score ?? null,
+        finalScore: finalRecord.score ?? null,
+        activityScore: activityRecord.score ?? null,
+      }
+    }
+
+    showModal.value = false
+  }
+  catch {
+    errorMessage.value = 'บันทึกคะแนนไม่สำเร็จ'
+  }
 }
 </script>
 

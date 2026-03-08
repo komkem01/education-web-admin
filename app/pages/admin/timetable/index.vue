@@ -1,33 +1,32 @@
 <template>
   <div class="page">
-    <AdminAppSkeletonLoader v-if="loading" :rows="9" :cols="6" />
+    <AdminAppSkeletonLoader v-if="loading || pageLoading" :rows="9" :cols="6" />
     <template v-else>
-      <!-- Header -->
       <div class="page-header">
         <div>
           <h2 class="page-title">ตารางสอน</h2>
-          <p class="page-desc">จัดการตารางสอนรายห้องเรียน ปีการศึกษา {{ filterYear }} เทอม {{ filterSemester }}</p>
+          <p class="page-desc">จัดการตารางสอนรายห้องเรียน ปีการศึกษา {{ currentYearLabel }} เทอม {{ filterSemester }}</p>
+          <p v-if="errorMessage" class="field-error">{{ errorMessage }}</p>
         </div>
         <button type="button" class="btn btn-primary" @click="openAdd()">+ เพิ่มคาบเรียน</button>
       </div>
 
-      <!-- Selectors -->
       <div class="filter-bar">
         <select v-model="filterClassroom" class="filter-select filter-select--wide">
-          <option v-for="c in classroomOptions" :key="c" :value="c">{{ c }}</option>
+          <option value="">-- เลือกห้องเรียน --</option>
+          <option v-for="c in classroomOptions" :key="c.value" :value="c.value">{{ c.label }}</option>
         </select>
         <select v-model="filterSemester" class="filter-select">
           <option value="1">เทอม 1</option>
           <option value="2">เทอม 2</option>
         </select>
         <select v-model="filterYear" class="filter-select">
-          <option value="2568">2568</option>
-          <option value="2567">2567</option>
+          <option value="">-- เลือกปีการศึกษา --</option>
+          <option v-for="y in academicYearOptions" :key="y.value" :value="y.value">{{ y.label }}</option>
         </select>
         <span class="slot-count">{{ classroomSlots.length }} คาบ</span>
       </div>
 
-      <!-- Timetable Grid -->
       <div class="timetable-wrap">
         <table class="timetable">
           <thead>
@@ -39,9 +38,8 @@
           </thead>
           <tbody>
             <template v-for="(period, pi) in PERIODS" :key="period.num">
-              <!-- Lunch break separator between period 4 and 5 -->
               <tr v-if="pi === 4" class="lunch-row">
-                <td colspan="7" class="lunch-cell">🍽 พักกลางวัน 11:20 – 12:00</td>
+                <td colspan="7" class="lunch-cell">พักกลางวัน 11:20 - 12:00</td>
               </tr>
               <tr class="td-row">
                 <td class="td-period">{{ period.num }}</td>
@@ -57,7 +55,7 @@
                     <div class="slot-card" :style="{ borderLeftColor: subjectColor(getSlot(day, period.num)!.courseCode) }">
                       <span class="slot-course">{{ getSlot(day, period.num)!.courseName }}</span>
                       <span class="slot-teacher">{{ getSlot(day, period.num)!.teacherName }}</span>
-                      <span class="slot-room">ห้อง {{ getSlot(day, period.num)!.room }}</span>
+                      <span class="slot-room">{{ getSlot(day, period.num)!.room }}</span>
                     </div>
                   </template>
                   <template v-else>
@@ -70,7 +68,6 @@
         </table>
       </div>
 
-      <!-- Add / Edit slot modal -->
       <AdminAppModal
         v-model="showModal"
         :title="editSlot ? 'แก้ไขคาบเรียน' : 'เพิ่มคาบเรียน'"
@@ -88,33 +85,32 @@
           <div class="form-group">
             <label class="form-label">คาบที่ <span class="req">*</span></label>
             <select v-model.number="form.period" class="form-input">
-              <option v-for="p in PERIODS" :key="p.num" :value="p.num">คาบ {{ p.num }} ({{ p.start }}–{{ p.end }})</option>
+              <option v-for="p in PERIODS" :key="p.num" :value="p.num">คาบ {{ p.num }} ({{ p.start }}-{{ p.end }})</option>
             </select>
           </div>
           <div class="form-group">
             <label class="form-label">รายวิชา <span class="req">*</span></label>
-            <select v-model="form.courseCode" class="form-input" @change="onCourseChange">
+            <select v-model="form.subjectId" class="form-input">
               <option value="">-- เลือกวิชา --</option>
-              <option v-for="c in courseRows" :key="c.code" :value="c.code">{{ c.code }} – {{ c.name }}</option>
+              <option v-for="c in subjectOptions" :key="c.value" :value="c.value">{{ c.label }}</option>
             </select>
-            <span v-if="formErrors.courseCode" class="field-error">{{ formErrors.courseCode }}</span>
+            <span v-if="formErrors.subjectId" class="field-error">{{ formErrors.subjectId }}</span>
           </div>
           <div class="form-group">
-            <label class="form-label">ครูผู้สอน</label>
-            <input v-model="form.teacherName" class="form-input" placeholder="ชื่อครู" />
-          </div>
-          <div class="form-group">
-            <label class="form-label">ห้อง/สถานที่</label>
-            <input v-model="form.room" class="form-input" placeholder="เช่น 101, วิทย์ 1, สนาม" />
+            <label class="form-label">ครูผู้สอน <span class="req">*</span></label>
+            <select v-model="form.teacherId" class="form-input">
+              <option value="">-- เลือกครูผู้สอน --</option>
+              <option v-for="t in teacherOptions" :key="t.value" :value="t.value">{{ t.label }}</option>
+            </select>
+            <span v-if="formErrors.teacherId" class="field-error">{{ formErrors.teacherId }}</span>
           </div>
         </div>
       </AdminAppModal>
 
-      <!-- Delete slot -->
       <AdminAppConfirmModal
         v-model="showConfirm"
         title="ลบคาบเรียนนี้?"
-        :description="`${editSlot?.courseName} — ${editSlot?.day} คาบ ${editSlot?.period}`"
+        :description="`${editSlot?.courseName} - ${editSlot?.day} คาบ ${editSlot?.period}`"
         @confirm="confirmDelete"
       />
     </template>
@@ -122,110 +118,278 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useTimetableData, DAYS, PERIODS, type TimetableSlot, type DayName } from '~/composables/useTimetableData'
-import { useCoursesData } from '~/composables/useCoursesData'
-import { useClassroomsData } from '~/composables/useClassroomsData'
+import { computed, ref, watch } from 'vue'
+import { DAYS, PERIODS, type DayName } from '~/composables/useTimetableData'
 
 definePageMeta({ layout: 'admin' })
 
-const { loading } = usePageLoad()
-const { slots } = useTimetableData()
-const { rows: courseRows } = useCoursesData()
-const { rows: classroomRows } = useClassroomsData()
+type BaseResponse<T> = { data: T }
+type SubjectApiItem = { id: string; subject_code: string | null; name: string }
+type TeacherApiItem = { id: string; teacher_code: string | null; first_name: string | null; last_name: string | null }
+type ClassroomApiItem = { id: string; name: string; grade_level: string | null; room_no: string | null }
+type AcademicYearApiItem = { id: string; year: string; term: string; is_current: boolean }
+type SubjectAssignmentApiItem = { id: string; subject_id: string; teacher_id: string; classroom_id: string; academic_year_id: string; semester_no: number; is_active: boolean }
+type ScheduleApiItem = { id: string; subject_assignment_id: string; day_of_week: string; period_no: number | null; is_active: boolean }
 
-const classroomOptions = computed(() => classroomRows.value.map(r => r.name))
-const filterClassroom = ref('ม.1/1')
+type TimetableSlot = {
+  id: string
+  subjectAssignmentId: string
+  subjectId: string
+  teacherId: string
+  classroomId: string
+  academicYearId: string
+  semesterNo: number
+  day: DayName
+  period: number
+  courseName: string
+  courseCode: string
+  teacherName: string
+  room: string
+}
+
+const { loading } = usePageLoad()
+const { profile } = useAdminAuth()
+const config = useRuntimeConfig()
+const authToken = useCookie<string | null>('edu_auth_token')
+
+const pageLoading = ref(false)
+const errorMessage = ref('')
+const slots = ref<TimetableSlot[]>([])
+const subjectRows = ref<SubjectApiItem[]>([])
+const teacherRows = ref<TeacherApiItem[]>([])
+const classroomRows = ref<ClassroomApiItem[]>([])
+const academicYearRows = ref<AcademicYearApiItem[]>([])
+const assignmentRows = ref<SubjectAssignmentApiItem[]>([])
+
+const classroomOptions = computed(() => classroomRows.value.map(item => ({ value: item.id, label: item.name || `${item.grade_level || ''} ${item.room_no || ''}`.trim() || item.id })))
+const subjectOptions = computed(() => subjectRows.value.map(item => ({ value: item.id, label: `${(item.subject_code || '').trim() || item.id} - ${item.name}` })))
+const teacherOptions = computed(() => teacherRows.value.map(item => ({ value: item.id, label: `${(item.first_name || '').trim()} ${(item.last_name || '').trim()}`.trim() || item.teacher_code || item.id })).sort((a, b) => a.label.localeCompare(b.label, 'th')))
+const academicYearOptions = computed(() => academicYearRows.value.map(item => ({ value: item.id, label: `${item.year} / ${item.term}` })))
+
+const filterClassroom = ref('')
 const filterSemester = ref('1')
-const filterYear = ref('2568')
+const filterYear = ref('')
+
+const currentYearLabel = computed(() => {
+  const found = academicYearRows.value.find(item => item.id === filterYear.value)
+  return found ? `${found.year} / ${found.term}` : '-'
+})
+
+function authHeaders() {
+  return { Authorization: `Bearer ${authToken.value}` }
+}
+
+async function apiFetch<T>(path: string, options?: Parameters<typeof $fetch<T>>[1]) {
+  try {
+    return await $fetch<T>(`${config.public.apiBase}/back-office${path}`, options)
+  }
+  catch {
+    return await $fetch<T>(`${config.public.apiBase}${path}`, options)
+  }
+}
+
+function toThaiDay(day: string): DayName {
+  if (day === 'monday') return 'จันทร์'
+  if (day === 'tuesday') return 'อังคาร'
+  if (day === 'wednesday') return 'พุธ'
+  if (day === 'thursday') return 'พฤหัสบดี'
+  if (day === 'friday') return 'ศุกร์'
+  if (day === 'saturday') return 'เสาร์'
+  return 'อาทิตย์'
+}
+
+function toApiDay(day: DayName): string {
+  if (day === 'จันทร์') return 'monday'
+  if (day === 'อังคาร') return 'tuesday'
+  if (day === 'พุธ') return 'wednesday'
+  if (day === 'พฤหัสบดี') return 'thursday'
+  if (day === 'ศุกร์') return 'friday'
+  if (day === 'เสาร์') return 'saturday'
+  return 'sunday'
+}
+
+async function loadRows() {
+  if (!import.meta.client || !authToken.value) return
+  pageLoading.value = true
+  errorMessage.value = ''
+
+  try {
+    const schoolID = profile.value.schoolId
+    const schoolQuery = schoolID ? `?school_id=${schoolID}` : ''
+    const [subjectsRes, teachersRes, classroomsRes, academicYearsRes, assignmentsRes, schedulesRes] = await Promise.all([
+      apiFetch<BaseResponse<SubjectApiItem[]>>(`/subjects${schoolQuery}`, { headers: authHeaders() }),
+      apiFetch<BaseResponse<TeacherApiItem[]>>('/teachers?only_active=false', { headers: authHeaders() }),
+      apiFetch<BaseResponse<ClassroomApiItem[]>>(`/classrooms${schoolQuery}`, { headers: authHeaders() }),
+      apiFetch<BaseResponse<AcademicYearApiItem[]>>('/academic-years?only_active=false', { headers: authHeaders() }),
+      apiFetch<BaseResponse<SubjectAssignmentApiItem[]>>('/subject-assignments?only_active=true', { headers: authHeaders() }),
+      apiFetch<BaseResponse<ScheduleApiItem[]>>('/schedules?only_active=true', { headers: authHeaders() }),
+    ])
+
+    subjectRows.value = Array.isArray(subjectsRes.data) ? subjectsRes.data : []
+    teacherRows.value = Array.isArray(teachersRes.data) ? teachersRes.data : []
+    classroomRows.value = Array.isArray(classroomsRes.data) ? classroomsRes.data : []
+    academicYearRows.value = Array.isArray(academicYearsRes.data) ? academicYearsRes.data : []
+    assignmentRows.value = Array.isArray(assignmentsRes.data) ? assignmentsRes.data : []
+
+    if (!filterClassroom.value) filterClassroom.value = classroomRows.value[0]?.id || ''
+    if (!filterYear.value) filterYear.value = academicYearRows.value.find(item => item.is_current)?.id || academicYearRows.value[0]?.id || ''
+
+    const subjectByID = new Map(subjectRows.value.map(item => [item.id, item] as const))
+    const teacherLabelByID = new Map(teacherRows.value.map(item => [item.id, `${(item.first_name || '').trim()} ${(item.last_name || '').trim()}`.trim() || item.teacher_code || item.id] as const))
+    const classroomLabelByID = new Map(classroomRows.value.map(item => [item.id, item.name || `${item.grade_level || ''} ${item.room_no || ''}`.trim() || item.id] as const))
+    const assignmentByID = new Map(assignmentRows.value.map(item => [item.id, item] as const))
+
+    slots.value = (Array.isArray(schedulesRes.data) ? schedulesRes.data : [])
+      .map(item => {
+        const assignment = assignmentByID.get(item.subject_assignment_id)
+        if (!assignment || !item.period_no) return null
+        const subject = subjectByID.get(assignment.subject_id)
+        return {
+          id: item.id,
+          subjectAssignmentId: assignment.id,
+          subjectId: assignment.subject_id,
+          teacherId: assignment.teacher_id,
+          classroomId: assignment.classroom_id,
+          academicYearId: assignment.academic_year_id,
+          semesterNo: assignment.semester_no,
+          day: toThaiDay(item.day_of_week),
+          period: item.period_no,
+          courseName: subject?.name || '-',
+          courseCode: (subject?.subject_code || '').trim() || assignment.subject_id,
+          teacherName: teacherLabelByID.get(assignment.teacher_id) || '-',
+          room: classroomLabelByID.get(assignment.classroom_id) || '-',
+        } as TimetableSlot
+      })
+      .filter((item): item is TimetableSlot => Boolean(item))
+  }
+  catch {
+    errorMessage.value = 'ไม่สามารถโหลดข้อมูลตารางสอนได้'
+    slots.value = []
+  }
+  finally {
+    pageLoading.value = false
+  }
+}
+
+if (import.meta.client) loadRows()
 
 const classroomSlots = computed(() =>
-  slots.value.filter(s => s.classroom === filterClassroom.value),
+  slots.value.filter(s => s.classroomId === filterClassroom.value && s.academicYearId === filterYear.value && String(s.semesterNo) === filterSemester.value),
 )
 
 function getSlot(day: DayName, period: number): TimetableSlot | undefined {
   return classroomSlots.value.find(s => s.day === day && s.period === period)
 }
 
-// Color per subject code prefix
-const colorMap: Record<string, string> = {
-  M: '#6366f1', T: '#f59e0b', S: '#10b981', L: '#0ea5e9', P: '#ef4444', SO: '#8b5cf6', A: '#ec4899', W: '#f97316',
-}
+const colorMap: Record<string, string> = { M: '#6366f1', T: '#f59e0b', S: '#10b981', L: '#0ea5e9', P: '#ef4444', SO: '#8b5cf6', A: '#ec4899', W: '#f97316' }
 function subjectColor(code: string): string {
   const prefix = code.replace(/[0-9]/g, '')
   return colorMap[prefix] ?? '#9ca3af'
 }
 
-// ── Add / Edit ──
 const showModal = ref(false)
+const showConfirm = ref(false)
 const editSlot = ref<TimetableSlot | null>(null)
-
-const emptyForm = (day?: DayName, period?: number): Omit<TimetableSlot, 'id'> => ({
-  classroom: filterClassroom.value,
-  day: day ?? 'จันทร์',
-  period: period ?? 1,
-  courseCode: '',
-  courseName: '',
-  teacherName: '',
-  room: '',
-})
-const form = ref(emptyForm())
-const formErrors = ref({ courseCode: '' })
-
-function onCourseChange() {
-  const found = courseRows.value.find(c => c.code === form.value.courseCode)
-  if (found) {
-    form.value.courseName = found.name
-    form.value.teacherName = found.teacherName
-  }
-}
+const form = ref({ day: 'จันทร์' as DayName, period: 1, subjectId: '', teacherId: '' })
+const formErrors = ref({ subjectId: '', teacherId: '' })
 
 function openAdd(day?: DayName, period?: number) {
   editSlot.value = null
-  form.value = emptyForm(day, period)
-  formErrors.value = { courseCode: '' }
+  form.value = { day: day ?? 'จันทร์', period: period ?? 1, subjectId: '', teacherId: '' }
+  formErrors.value = { subjectId: '', teacherId: '' }
   showModal.value = true
 }
 
 function openEdit(slot: TimetableSlot) {
   editSlot.value = slot
-  form.value = { ...slot }
-  formErrors.value = { courseCode: '' }
+  form.value = { day: slot.day, period: slot.period, subjectId: slot.subjectId, teacherId: slot.teacherId }
+  formErrors.value = { subjectId: '', teacherId: '' }
   showModal.value = true
 }
 
-function saveSlot() {
-  if (!form.value.courseCode) { formErrors.value.courseCode = 'กรุณาเลือกวิชา'; return }
-  // Check conflict
-  const conflict = slots.value.find(s =>
-    s.classroom === filterClassroom.value
-    && s.day === form.value.day
-    && s.period === form.value.period
-    && (!editSlot.value || s.id !== editSlot.value.id),
-  )
-  if (conflict) { formErrors.value.courseCode = `คาบนี้มีวิชา '${conflict.courseName}' อยู่แล้ว`; return }
+async function saveSlot() {
+  if (!filterClassroom.value || !filterYear.value || !authToken.value) return
+  formErrors.value = { subjectId: '', teacherId: '' }
+  if (!form.value.subjectId) { formErrors.value.subjectId = 'กรุณาเลือกวิชา'; return }
+  if (!form.value.teacherId) { formErrors.value.teacherId = 'กรุณาเลือกครูผู้สอน'; return }
 
-  if (editSlot.value) {
-    const idx = slots.value.findIndex(s => s.id === editSlot.value!.id)
-    if (idx !== -1) slots.value[idx] = { ...editSlot.value, ...form.value }
+  const semesterNo = Number.parseInt(filterSemester.value, 10) || 1
+  const conflict = slots.value.find(s => s.classroomId === filterClassroom.value && s.academicYearId === filterYear.value && s.semesterNo === semesterNo && s.day === form.value.day && s.period === form.value.period && (!editSlot.value || s.id !== editSlot.value.id))
+  if (conflict) {
+    formErrors.value.subjectId = `คาบนี้มีวิชา '${conflict.courseName}' อยู่แล้ว`
+    return
   }
-  else {
-    slots.value.push({ id: Date.now(), ...form.value, classroom: filterClassroom.value })
+
+  try {
+    const assignmentQuery = `?subject_id=${form.value.subjectId}&teacher_id=${form.value.teacherId}&classroom_id=${filterClassroom.value}&academic_year_id=${filterYear.value}&semester_no=${semesterNo}&only_active=true`
+    const assignmentRes = await apiFetch<BaseResponse<SubjectAssignmentApiItem[]>>(`/subject-assignments${assignmentQuery}`, { headers: authHeaders() })
+    const existing = Array.isArray(assignmentRes.data) ? assignmentRes.data[0] : undefined
+    let assignmentID = existing?.id || ''
+
+    if (!assignmentID) {
+      const created = await apiFetch<BaseResponse<SubjectAssignmentApiItem>>('/subject-assignments', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: {
+          subject_id: form.value.subjectId,
+          teacher_id: form.value.teacherId,
+          classroom_id: filterClassroom.value,
+          academic_year_id: filterYear.value,
+          semester_no: semesterNo,
+          is_active: true,
+        },
+      })
+      assignmentID = created.data.id
+    }
+
+    const period = PERIODS.find(p => p.num === form.value.period)
+    const payload = {
+      subject_assignment_id: assignmentID,
+      day_of_week: toApiDay(form.value.day),
+      period_no: form.value.period,
+      start_time: `${period?.start || '08:30'}:00`,
+      end_time: `${period?.end || '09:20'}:00`,
+      is_active: true,
+    }
+
+    if (editSlot.value) {
+      await apiFetch(`/schedules/${editSlot.value.id}`, { method: 'PATCH', headers: authHeaders(), body: payload })
+    }
+    else {
+      await apiFetch('/schedules', { method: 'POST', headers: authHeaders(), body: payload })
+    }
+
+    showModal.value = false
+    await loadRows()
   }
-  showModal.value = false
+  catch {
+    errorMessage.value = 'บันทึกคาบเรียนไม่สำเร็จ'
+  }
 }
 
-// ── Delete ──
-const showConfirm = ref(false)
+async function confirmDelete() {
+  if (!editSlot.value || !authToken.value) {
+    showConfirm.value = false
+    showModal.value = false
+    return
+  }
 
-function confirmDelete() {
-  if (editSlot.value) {
-    slots.value = slots.value.filter(s => s.id !== editSlot.value!.id)
+  try {
+    await apiFetch(`/schedules/${editSlot.value.id}`, { method: 'DELETE', headers: authHeaders() })
     editSlot.value = null
+    showConfirm.value = false
+    showModal.value = false
+    await loadRows()
   }
-  showConfirm.value = false
-  showModal.value = false
+  catch {
+    errorMessage.value = 'ลบคาบเรียนไม่สำเร็จ'
+    showConfirm.value = false
+  }
 }
+
+watch([filterClassroom, filterYear, filterSemester], () => {
+  if (showModal.value) showModal.value = false
+})
 </script>
 
 <style scoped>
