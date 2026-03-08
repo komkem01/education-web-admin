@@ -161,9 +161,9 @@
             </div>
             <div class="form-group">
               <label class="form-label">ห้องเรียน <span class="req">*</span></label>
-              <select v-model="sessionForm.classroom" class="form-input" @change="loadStudents">
+              <select v-model="sessionForm.classroomId" class="form-input" @change="loadStudents">
                 <option value="">-- เลือกห้อง --</option>
-                <option v-for="c in classroomOptions" :key="c" :value="c">{{ c }}</option>
+                <option v-for="c in classroomRows" :key="c.id" :value="c.id">{{ c.name }}</option>
               </select>
               <span v-if="formErrors.classroom" class="field-error">{{ formErrors.classroom }}</span>
             </div>
@@ -175,7 +175,10 @@
             </div>
             <div class="form-group form-group--wide">
               <label class="form-label">วิชา</label>
-              <input v-model="sessionForm.courseName" class="form-input" placeholder="ชื่อรายวิชา" />
+              <select v-model="sessionForm.subjectAssignmentId" class="form-input">
+                <option value="">-- เลือกรายวิชา --</option>
+                <option v-for="c in sessionCourseOptions" :key="c.id" :value="c.id">{{ c.label }}</option>
+              </select>
             </div>
           </div>
 
@@ -205,7 +208,7 @@
               </div>
             </div>
           </div>
-          <p v-else-if="sessionForm.classroom" class="no-students">ไม่พบข้อมูลนักเรียนในห้องนี้</p>
+          <p v-else-if="sessionForm.classroomId" class="no-students">ไม่พบข้อมูลนักเรียนในห้องนี้</p>
         </div>
       </AdminAppModal>
     </template>
@@ -214,18 +217,235 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { useAttendanceData, type AttendanceRow, type AttendanceStatus } from '~/composables/useAttendanceData'
-import { useStudentsData } from '~/composables/useStudentsData'
-import { useClassroomsData } from '~/composables/useClassroomsData'
+import { useAdminAuth } from '~/composables/useAdminAuth'
 
 definePageMeta({ layout: 'admin' })
 
 const { loading } = usePageLoad()
-const { rows } = useAttendanceData()
-const { rows: studentRows } = useStudentsData()
-const { rows: classroomRows } = useClassroomsData()
+const config = useRuntimeConfig()
+const authToken = useCookie<string | null>('edu_auth_token')
+const { profile } = useAdminAuth()
+
+type AttendanceStatus = 'มาเรียน' | 'ขาด' | 'ลา' | 'สาย'
+
+interface AttendanceRow {
+  id: string
+  studentUUID: string
+  studentId: string
+  studentName: string
+  classroom: string
+  date: string
+  period: number
+  courseName: string
+  status: AttendanceStatus
+  note: string
+  enrollmentID: string
+  scheduleID: string
+}
+
+interface BaseResponse<T> {
+  data: T
+}
+
+interface StudentApiItem {
+  id: string
+  student_code: string | null
+  first_name: string | null
+  last_name: string | null
+  current_classroom_id: string | null
+}
+
+interface ClassroomApiItem {
+  id: string
+  name: string
+}
+
+interface AttendanceApiItem {
+  id: string
+  enrollment_id: string
+  schedule_id: string
+  check_date: string | null
+  status: string
+  note: string | null
+}
+
+interface EnrollmentApiItem {
+  id: string
+  subject_assignment_id: string
+  status: string
+}
+
+interface SubjectAssignmentApiItem {
+  id: string
+  subject_id: string
+  classroom_id: string
+  is_active: boolean
+}
+
+interface SubjectApiItem {
+  id: string
+  name: string
+}
+
+interface ScheduleApiItem {
+  id: string
+  subject_assignment_id: string
+  period_no: number | null
+  day_of_week: string
+  is_active: boolean
+}
+
+interface SessionStudent {
+  studentId: string
+  studentUUID: string
+  studentName: string
+  status: AttendanceStatus
+  note: string
+}
+
+const rows = ref<AttendanceRow[]>([])
+const classroomRows = ref<ClassroomApiItem[]>([])
+const studentRows = ref<Array<{ id: string; code: string; name: string; classroomId: string; classroomName: string }>>([])
+const enrollmentsByStudent = ref<Record<string, EnrollmentApiItem[]>>({})
+const subjectAssignments = ref<SubjectAssignmentApiItem[]>([])
+const schedules = ref<ScheduleApiItem[]>([])
+const subjectsByID = ref<Record<string, string>>({})
 
 const classroomOptions = computed(() => classroomRows.value.map(r => r.name))
+const classroomNameByID = computed(() => Object.fromEntries(classroomRows.value.map(r => [r.id, r.name])))
+
+function authHeaders() {
+  return { Authorization: `Bearer ${authToken.value}` }
+}
+
+async function apiFetch<T>(path: string, options?: Parameters<typeof $fetch<T>>[1]) {
+  try {
+    return await $fetch<T>(`${config.public.apiBase}/back-office${path}`, options)
+  }
+  catch {
+    return await $fetch<T>(`${config.public.apiBase}${path}`, options)
+  }
+}
+
+async function safeApiFetch<T>(path: string, fallback: T, options?: Parameters<typeof $fetch<T>>[1]) {
+  try {
+    return await apiFetch<T>(path, options)
+  }
+  catch {
+    return fallback
+  }
+}
+
+function trimName(firstName: string | null, lastName: string | null) {
+  const first = (firstName || '').trim()
+  const last = (lastName || '').trim()
+  return `${first} ${last}`.trim() || 'ไม่ระบุชื่อ'
+}
+
+function apiStatusToUI(status: string): AttendanceStatus {
+  if (status === 'absent') return 'ขาด'
+  if (status === 'late') return 'สาย'
+  if (status === 'sick' || status === 'business') return 'ลา'
+  return 'มาเรียน'
+}
+
+function uiStatusToAPI(status: AttendanceStatus): string {
+  if (status === 'ขาด') return 'absent'
+  if (status === 'สาย') return 'late'
+  if (status === 'ลา') return 'sick'
+  return 'present'
+}
+
+function dayOfWeekFromDate(date: string): string {
+  const day = new Date(date).getDay()
+  const map = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+  return map[day] || 'monday'
+}
+
+async function loadStudentEnrollments(studentID: string) {
+  if (enrollmentsByStudent.value[studentID]) return enrollmentsByStudent.value[studentID]
+  const res = await safeApiFetch<BaseResponse<EnrollmentApiItem[]>>(`/students/${studentID}/enrollments`, { data: [] }, { headers: authHeaders() })
+  const data = Array.isArray(res.data) ? res.data : []
+  enrollmentsByStudent.value[studentID] = data
+  return data
+}
+
+async function loadRows() {
+  if (!import.meta.client || !authToken.value) return
+
+  const schoolID = profile.value.schoolId
+  const schoolQuery = schoolID ? `?school_id=${schoolID}` : ''
+
+  const [studentsRes, classroomsRes, subjectsRes, assignmentsRes, schedulesRes] = await Promise.all([
+    safeApiFetch<BaseResponse<StudentApiItem[]>>('/students?only_active=true', { data: [] }, { headers: authHeaders() }),
+    safeApiFetch<BaseResponse<ClassroomApiItem[]>>(`/classrooms${schoolQuery}`, { data: [] }, { headers: authHeaders() }),
+    safeApiFetch<BaseResponse<SubjectApiItem[]>>(`/subjects${schoolQuery}`, { data: [] }, { headers: authHeaders() }),
+    safeApiFetch<BaseResponse<SubjectAssignmentApiItem[]>>('/subject-assignments?only_active=true', { data: [] }, { headers: authHeaders() }),
+    safeApiFetch<BaseResponse<ScheduleApiItem[]>>('/schedules?only_active=true', { data: [] }, { headers: authHeaders() }),
+  ])
+
+  classroomRows.value = Array.isArray(classroomsRes.data) ? classroomsRes.data : []
+
+  const subjectNameMap: Record<string, string> = {}
+  for (const item of (Array.isArray(subjectsRes.data) ? subjectsRes.data : [])) {
+    subjectNameMap[item.id] = item.name
+  }
+  subjectsByID.value = subjectNameMap
+
+  subjectAssignments.value = Array.isArray(assignmentsRes.data) ? assignmentsRes.data : []
+  schedules.value = Array.isArray(schedulesRes.data) ? schedulesRes.data : []
+
+  const students = (Array.isArray(studentsRes.data) ? studentsRes.data : []).map((item) => {
+    const classroomID = item.current_classroom_id || ''
+    return {
+      id: item.id,
+      code: (item.student_code || '').trim() || item.id.slice(0, 8),
+      name: trimName(item.first_name, item.last_name),
+      classroomId: classroomID,
+      classroomName: classroomNameByID.value[classroomID] || '-',
+    }
+  })
+
+  studentRows.value = students
+
+  const assignmentByID = Object.fromEntries(subjectAssignments.value.map(a => [a.id, a])) as Record<string, SubjectAssignmentApiItem>
+  const scheduleByID = Object.fromEntries(schedules.value.map(s => [s.id, s])) as Record<string, ScheduleApiItem>
+
+  const nestedRows = await Promise.all(students.map(async (student) => {
+    const enrollments = await loadStudentEnrollments(student.id)
+    if (!enrollments.length) return [] as AttendanceRow[]
+
+    const logsRes = await safeApiFetch<BaseResponse<AttendanceApiItem[]>>(`/students/${student.id}/attendance-logs`, { data: [] }, { headers: authHeaders() })
+
+    const enrollmentByID = Object.fromEntries(enrollments.map(e => [e.id, e])) as Record<string, EnrollmentApiItem>
+    const logs = Array.isArray(logsRes.data) ? logsRes.data : []
+
+    return logs.map((log) => {
+      const enrollment = enrollmentByID[log.enrollment_id]
+      const assignment = enrollment ? assignmentByID[enrollment.subject_assignment_id] : undefined
+      const schedule = scheduleByID[log.schedule_id]
+      const courseName = assignment ? (subjectsByID.value[assignment.subject_id] || '-') : '-'
+      return {
+        id: log.id,
+        studentUUID: student.id,
+        studentId: student.code,
+        studentName: student.name,
+        classroom: student.classroomName,
+        date: (log.check_date || '').slice(0, 10),
+        period: schedule?.period_no || 0,
+        courseName,
+        status: apiStatusToUI(log.status),
+        note: (log.note || '').trim(),
+        enrollmentID: log.enrollment_id,
+        scheduleID: log.schedule_id,
+      } as AttendanceRow
+    })
+  }))
+
+  rows.value = nestedRows
+    .flat()
+    .sort((a, b) => `${b.date} ${String(b.period).padStart(2, '0')}`.localeCompare(`${a.date} ${String(a.period).padStart(2, '0')}`))
+}
 
 // ── Filters ──
 const filterDate = ref('')
@@ -278,35 +498,84 @@ function formatDate(d: string) {
 }
 
 // ── Inline edit ──
-function updateStatus(row: AttendanceRow, status: AttendanceStatus) {
-  const idx = rows.value.findIndex(r => r.id === row.id)
-  if (idx !== -1) rows.value[idx] = { ...rows.value[idx], status }
+async function patchRow(row: AttendanceRow, status: AttendanceStatus, note: string) {
+  await apiFetch(`/students/${row.studentUUID}/attendance-logs/${row.id}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: {
+      enrollment_id: row.enrollmentID,
+      schedule_id: row.scheduleID,
+      check_date: row.date,
+      status: uiStatusToAPI(status),
+      note,
+    },
+  })
 }
-function updateNote(row: AttendanceRow, note: string) {
+
+async function updateStatus(row: AttendanceRow, status: AttendanceStatus) {
   const idx = rows.value.findIndex(r => r.id === row.id)
-  if (idx !== -1) rows.value[idx] = { ...rows.value[idx], note }
+  if (idx === -1) return
+
+  const prev = rows.value[idx]
+  rows.value[idx] = { ...prev, status }
+  try {
+    await patchRow(prev, status, prev.note)
+  }
+  catch {
+    rows.value[idx] = prev
+  }
 }
-function deleteRow(row: AttendanceRow) {
-  rows.value = rows.value.filter(r => r.id !== row.id)
+
+async function updateNote(row: AttendanceRow, note: string) {
+  const idx = rows.value.findIndex(r => r.id === row.id)
+  if (idx === -1) return
+
+  const prev = rows.value[idx]
+  rows.value[idx] = { ...prev, note }
+  try {
+    await patchRow(prev, prev.status, note)
+  }
+  catch {
+    rows.value[idx] = prev
+  }
+}
+
+async function deleteRow(row: AttendanceRow) {
+  try {
+    await apiFetch(`/students/${row.studentUUID}/attendance-logs/${row.id}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    })
+    rows.value = rows.value.filter(r => r.id !== row.id)
+  }
+  catch {
+    // Keep current list unchanged on failure.
+  }
 }
 
 // ── Add session ──
 const showModal = ref(false)
-const sessionForm = ref({ date: '', classroom: '', period: 1, courseName: '' })
+const sessionForm = ref({ date: '', classroomId: '', subjectAssignmentId: '', period: 1 })
 const formErrors = ref({ date: '', classroom: '' })
-
-interface SessionStudent { studentId: string; studentName: string; status: AttendanceStatus; note: string }
 const sessionStudents = ref<SessionStudent[]>([])
 
+const sessionCourseOptions = computed(() => {
+  if (!sessionForm.value.classroomId) return [] as Array<{ id: string; label: string }>
+
+  return subjectAssignments.value
+    .filter(a => a.classroom_id === sessionForm.value.classroomId && a.is_active)
+    .map(a => ({ id: a.id, label: subjectsByID.value[a.subject_id] || a.id.slice(0, 8) }))
+})
+
 function loadStudents() {
-  const cls = sessionForm.value.classroom
+  const cls = sessionForm.value.classroomId
   sessionStudents.value = studentRows.value
-    .filter(s => s.class === cls)
-    .map(s => ({ studentId: s.id, studentName: s.name, status: 'มาเรียน' as AttendanceStatus, note: '' }))
+    .filter(s => s.classroomId === cls)
+    .map(s => ({ studentId: s.code, studentUUID: s.id, studentName: s.name, status: 'มาเรียน' as AttendanceStatus, note: '' }))
 }
 
 function openAddSession() {
-  sessionForm.value = { date: new Date().toISOString().slice(0, 10), classroom: '', period: 1, courseName: '' }
+  sessionForm.value = { date: new Date().toISOString().slice(0, 10), classroomId: '', subjectAssignmentId: '', period: 1 }
   formErrors.value = { date: '', classroom: '' }
   sessionStudents.value = []
   showModal.value = true
@@ -316,24 +585,62 @@ function markAll(status: AttendanceStatus) {
   sessionStudents.value.forEach(s => s.status = status)
 }
 
-function saveSession() {
+async function saveSession() {
   formErrors.value = { date: '', classroom: '' }
   if (!sessionForm.value.date) { formErrors.value.date = 'กรุณาเลือกวันที่'; return }
-  if (!sessionForm.value.classroom) { formErrors.value.classroom = 'กรุณาเลือกห้องเรียน'; return }
-  sessionStudents.value.forEach(s => {
-    rows.value.push({
-      id: Date.now() + Math.random(),
-      studentId: s.studentId,
-      studentName: s.studentName,
-      classroom: sessionForm.value.classroom,
-      date: sessionForm.value.date,
-      period: sessionForm.value.period,
-      courseName: sessionForm.value.courseName,
-      status: s.status,
-      note: s.note,
-    })
-  })
+  if (!sessionForm.value.classroomId) { formErrors.value.classroom = 'กรุณาเลือกห้องเรียน'; return }
+  if (!sessionForm.value.subjectAssignmentId) return
+
+  const targetDay = dayOfWeekFromDate(sessionForm.value.date)
+  const schedule = schedules.value.find(s =>
+    s.subject_assignment_id === sessionForm.value.subjectAssignmentId &&
+    s.is_active &&
+    (s.period_no || 0) === sessionForm.value.period &&
+    s.day_of_week === targetDay,
+  ) || schedules.value.find(s =>
+    s.subject_assignment_id === sessionForm.value.subjectAssignmentId &&
+    s.is_active &&
+    (s.period_no || 0) === sessionForm.value.period,
+  )
+
+  if (!schedule) return
+
+  await Promise.all(sessionStudents.value.map(async (s) => {
+    const enrollments = await loadStudentEnrollments(s.studentUUID)
+    const enrollment = enrollments.find(e => e.subject_assignment_id === sessionForm.value.subjectAssignmentId)
+    if (!enrollment) return
+
+    try {
+      await apiFetch(`/students/${s.studentUUID}/attendance-logs`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: {
+          enrollment_id: enrollment.id,
+          schedule_id: schedule.id,
+          check_date: sessionForm.value.date,
+          status: uiStatusToAPI(s.status),
+          note: s.note,
+        },
+      })
+    }
+    catch {
+      // Skip invalid student/schedule rows without failing the whole batch.
+    }
+  }))
+
+  await loadRows()
   showModal.value = false
+}
+
+if (import.meta.client) {
+  ;(async () => {
+    try {
+      await loadRows()
+    }
+    catch {
+      rows.value = []
+    }
+  })()
 }
 </script>
 

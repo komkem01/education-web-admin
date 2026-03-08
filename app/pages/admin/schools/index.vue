@@ -11,6 +11,44 @@
         </div>
       </div>
 
+      <div v-if="isSuperAdmin" class="card super-admin-create-card">
+        <div class="card-header-row">
+          <h3 class="card-title">สร้างโรงเรียนใหม่ (Super Admin)</h3>
+          <div class="card-actions">
+            <button type="button" class="btn btn-ghost-sm" @click="resetCreateSchoolForm">ล้างค่า</button>
+            <button type="button" class="btn btn-save" :disabled="createSchoolLoading" @click="createSchoolBySuperAdmin">
+              {{ createSchoolLoading ? 'กำลังสร้าง...' : 'สร้างโรงเรียน' }}
+            </button>
+          </div>
+        </div>
+        <p class="card-desc">สร้างโรงเรียนแล้วระบบจะสลับบริบทไปโรงเรียนนั้นให้อัตโนมัติ</p>
+        <p v-if="createSchoolSuccess" class="inline-success">{{ createSchoolSuccess }}</p>
+        <p v-if="createSchoolError" class="inline-error">{{ createSchoolError }}</p>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="field-label">ชื่อโรงเรียน <span class="req">*</span></label>
+            <input v-model="createSchoolForm.name" class="input" type="text" placeholder="เช่น โรงเรียนตัวอย่าง" />
+          </div>
+          <div class="form-group">
+            <label class="field-label">สีธีมโรงเรียน</label>
+            <input v-model="createSchoolForm.themeColor" class="input" type="text" placeholder="#1d4ed8" />
+          </div>
+          <div class="form-group form-group--full">
+            <label class="field-label">โลโก้โรงเรียน (URL)</label>
+            <input v-model="createSchoolForm.logoUrl" class="input" type="url" placeholder="https://..." />
+          </div>
+          <div class="form-group form-group--full">
+            <label class="field-label">ที่อยู่</label>
+            <textarea v-model="createSchoolForm.address" class="input textarea" rows="2" />
+          </div>
+          <div class="form-group form-group--full">
+            <label class="field-label">รายละเอียด</label>
+            <textarea v-model="createSchoolForm.description" class="input textarea" rows="2" />
+          </div>
+        </div>
+      </div>
+
       <div class="grid-2">
         <!-- ── School Info ── -->
         <div class="card">
@@ -180,7 +218,7 @@ definePageMeta({ layout: 'admin' })
 const { loading } = usePageLoad()
 const config = useRuntimeConfig()
 const authToken = useCookie<string | null>('edu_auth_token')
-const { profile, fetchSchoolProfileById } = useAdminAuth()
+const { profile, isSuperAdmin, fetchSchoolProfileById, switchSchool } = useAdminAuth()
 
 type SchoolModel = {
   id: string
@@ -222,10 +260,21 @@ type SubjectResponse = {
 
 const schoolError = ref('')
 const schoolLoading = ref(false)
+const createSchoolLoading = ref(false)
+const createSchoolError = ref('')
+const createSchoolSuccess = ref('')
 const yearError = ref('')
 const yearLoading = ref(false)
 const curriculumError = ref('')
 const curriculumLoading = ref(false)
+
+const createSchoolForm = reactive({
+  name: '',
+  logoUrl: '',
+  themeColor: '',
+  address: '',
+  description: '',
+})
 
 // ── School form ──
 const editingSchool = ref(false)
@@ -242,6 +291,75 @@ function bindSchoolForm(school: SchoolModel) {
   schoolForm.themeColor = school.theme_color || ''
   schoolForm.address = school.address || ''
   schoolForm.description = school.description || ''
+}
+
+function resetCreateSchoolForm() {
+  createSchoolForm.name = ''
+  createSchoolForm.logoUrl = ''
+  createSchoolForm.themeColor = ''
+  createSchoolForm.address = ''
+  createSchoolForm.description = ''
+  createSchoolError.value = ''
+  createSchoolSuccess.value = ''
+}
+
+async function createSchoolBySuperAdmin() {
+  if (!authToken.value) return
+
+  createSchoolError.value = ''
+  createSchoolSuccess.value = ''
+
+  const payload = {
+    name: createSchoolForm.name.trim(),
+    logo_url: createSchoolForm.logoUrl.trim() || null,
+    theme_color: createSchoolForm.themeColor.trim() || null,
+    address: createSchoolForm.address.trim(),
+    description: createSchoolForm.description.trim() || null,
+  }
+
+  if (!payload.name) {
+    createSchoolError.value = 'กรุณากรอกชื่อโรงเรียน'
+    return
+  }
+
+  createSchoolLoading.value = true
+  try {
+    let res: SchoolResponse
+    try {
+      res = await $fetch<SchoolResponse>(`${config.public.apiBase}/back-office/schools`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: payload,
+      })
+    }
+    catch {
+      res = await $fetch<SchoolResponse>(`${config.public.apiBase}/schools`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: payload,
+      })
+    }
+
+    bindSchoolForm(res.data)
+    schoolSnapshot = { ...schoolForm }
+    editingSchool.value = false
+
+    await switchSchool(res.data.id)
+    await Promise.all([
+      fetchSchoolProfileById(res.data.id),
+      loadAcademicYears(),
+      loadCurriculum(),
+    ])
+
+    resetCreateSchoolForm()
+    createSchoolSuccess.value = `สร้างโรงเรียนสำเร็จ: ${res.data.name}`
+  }
+  catch {
+    createSchoolError.value = 'สร้างโรงเรียนไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'
+  }
+  finally {
+    createSchoolLoading.value = false
+  }
 }
 
 async function loadSchool() {
@@ -628,6 +746,17 @@ const docs = [
   margin: 0;
   color: #dc2626;
   font-size: 0.82rem;
+}
+
+.inline-success {
+  margin: 0;
+  color: #166534;
+  font-size: 0.82rem;
+}
+
+.super-admin-create-card {
+  border-color: #dbeafe;
+  background: #f8fbff;
 }
 
 .grid-2 {

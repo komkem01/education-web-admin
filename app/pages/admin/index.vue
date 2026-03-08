@@ -11,10 +11,10 @@
 
     <!-- ── Metric Cards ── -->
     <div class="grid-4 section-gap">
-      <AdminMetricCard icon="👥" label="บุคลากรทั้งหมด" :value="String(personnelRows.length)" :sub="`อยู่ในระบบ ${activePersonnelCount} คน`" :trend="4" accent="#6366f1" />
-      <AdminMetricCard icon="🎓" label="ครูทั้งหมด" :value="String(summary.teachers_total)" :sub="`สอนอยู่ ${summary.teachers_active} คน`" :trend="2" accent="#0ea5e9" />
-      <AdminMetricCard icon="📚" label="นักเรียนทั้งหมด" :value="summary.students_total.toLocaleString()" :sub="`ลงทะเบียนแล้ว ${summary.students_active} คน`" :trend="5" accent="#10b981" />
-      <AdminMetricCard icon="✅" label="คำขอรออนุมัติ" :value="String(pendingCount)" :sub="`ทั้งหมด ${allApprovalCount} รายการ`" :trend="-2" accent="#f59e0b" />
+      <AdminMetricCard icon="👥" label="บุคลากรทั้งหมด" :value="String(personnelRows.length)" :sub="`อยู่ในระบบ ${activePersonnelCount} คน`" accent="#6366f1" />
+      <AdminMetricCard icon="🎓" label="ครูทั้งหมด" :value="String(summary.teachers_total)" :sub="`สอนอยู่ ${summary.teachers_active} คน`" accent="#0ea5e9" />
+      <AdminMetricCard icon="📚" label="นักเรียนทั้งหมด" :value="summary.students_total.toLocaleString()" :sub="`ลงทะเบียนแล้ว ${summary.students_active} คน`" accent="#10b981" />
+      <AdminMetricCard icon="✅" label="คำขอรออนุมัติ" :value="String(pendingCount)" :sub="`ทั้งหมด ${allApprovalCount} รายการ`" accent="#f59e0b" />
     </div>
 
     <!-- ── Quick Stats ── -->

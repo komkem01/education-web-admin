@@ -3,6 +3,7 @@ type LoginResponse = {
   data: {
     access_token: string
     member: {
+      email?: string
       role: string
       roles: string[]
     }
@@ -32,10 +33,10 @@ const errorMessage = ref('')
 const loading = ref(false)
 const config = useRuntimeConfig()
 
-const { authToken, setSession, fetchMemberProfileByMemberId, fetchSchoolProfileById } = useAdminAuth()
+const { authToken, activeRole, setSession, fetchMemberProfileByMemberId, fetchSchoolProfileById } = useAdminAuth()
 
 if (authToken.value) {
-  await navigateTo('/admin')
+  await navigateTo(activeRole.value === 'super_admin' ? '/admin/schools' : '/admin')
 }
 
 const handleLogin = async () => {
@@ -59,18 +60,22 @@ const handleLogin = async () => {
     const primaryRole = loginRes.data.member.role
     const allRoles = loginRes.data.member.roles ?? []
 
-    if (primaryRole !== 'admin') {
-      if (!allRoles.includes('admin')) {
+    const hasAdmin = primaryRole === 'admin' || allRoles.includes('admin')
+    const hasSuperAdmin = primaryRole === 'super_admin' || allRoles.includes('super_admin')
+    const preferredRole = hasSuperAdmin ? 'super_admin' : 'admin'
+
+    if (!hasAdmin && !hasSuperAdmin) {
         errorMessage.value = 'บัญชีนี้ไม่มีสิทธิ์เข้าใช้งานพอร์ทัลแอดมิน'
         return
-      }
+    }
 
+    if (primaryRole !== preferredRole) {
       const switchRes = await $fetch<SwitchRoleResponse>(`${config.public.apiBase}/auth/switch-role`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${accessToken}`,
         },
-        body: { role: 'admin' },
+        body: { role: preferredRole },
       })
       accessToken = switchRes.data.access_token
     }
@@ -83,8 +88,8 @@ const handleLogin = async () => {
 
     setSession({
       accessToken,
-      activeRole: 'admin',
-      email: loginRes.data.member.email,
+      activeRole: meRes.data.role,
+      email: loginRes.data.member.email || username.value.trim(),
       me: meRes.data,
     })
 
@@ -93,7 +98,7 @@ const handleLogin = async () => {
       fetchSchoolProfileById(meRes.data.school_id),
     ])
 
-    await navigateTo('/admin')
+    await navigateTo(meRes.data.role === 'super_admin' ? '/admin/schools' : '/admin')
   }
   catch (error: any) {
     if (error?.statusCode === 401) {
@@ -135,7 +140,7 @@ const handleLogin = async () => {
           <input v-model="password" type="password" placeholder="••••••••" />
         </label>
 
-        <p class="role-fixed">สิทธิ์การใช้งาน: แอดมิน</p>
+        <p class="role-fixed">สิทธิ์การใช้งาน: แอดมิน / ผู้ดูแลระบบส่วนกลาง</p>
 
         <p v-if="errorMessage" class="error-text">{{ errorMessage }}</p>
 

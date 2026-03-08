@@ -97,6 +97,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useAdminAuth } from '~/composables/useAdminAuth'
 
 definePageMeta({ layout: 'admin' })
 
@@ -105,6 +106,12 @@ type BaseResponse<T> = { data: T }
 type SubjectGroupApiItem = {
   id: string
   name: string
+}
+
+type SubjectApiItem = {
+  id: string
+  subject_group_id: string | null
+  subject_subgroup_id: string | null
 }
 
 type SubjectSubgroupApiItem = {
@@ -127,8 +134,10 @@ type SubjectSubGroupRow = {
 const { loading } = usePageLoad()
 const config = useRuntimeConfig()
 const authToken = useCookie<string | null>('edu_auth_token')
+const { profile } = useAdminAuth()
 const rows = ref<SubjectSubGroupRow[]>([])
 const subjectGroupRows = ref<SubjectGroupApiItem[]>([])
+const createdSubgroupIDs = ref<string[]>([])
 
 function authHeaders() {
   return { Authorization: `Bearer ${authToken.value}` }
@@ -157,14 +166,36 @@ function mapRow(item: SubjectSubgroupApiItem): SubjectSubGroupRow {
 
 async function loadRows() {
   if (!import.meta.client || !authToken.value) return
+
+  const schoolID = profile.value.schoolId
+  if (!schoolID) {
+    subjectGroupRows.value = []
+    rows.value = []
+    return
+  }
+
   try {
-    const [groupsRes, subgroupsRes] = await Promise.all([
+    const [groupsRes, subgroupsRes, subjectsRes] = await Promise.all([
       apiFetch<BaseResponse<SubjectGroupApiItem[]>>('/subject-groups?only_active=false', { headers: authHeaders() }),
       apiFetch<BaseResponse<SubjectSubgroupApiItem[]>>('/subject-subgroups?only_active=false', { headers: authHeaders() }),
+      apiFetch<BaseResponse<SubjectApiItem[]>>(`/subjects?school_id=${schoolID}`, { headers: authHeaders() }),
     ])
 
-    subjectGroupRows.value = Array.isArray(groupsRes.data) ? groupsRes.data : []
-    rows.value = (Array.isArray(subgroupsRes.data) ? subgroupsRes.data : []).map(mapRow)
+    const allowedGroupIDs = new Set<string>()
+    const allowedSubgroupIDs = new Set<string>()
+    for (const item of (Array.isArray(subjectsRes.data) ? subjectsRes.data : [])) {
+      const groupID = (item.subject_group_id || '').trim()
+      const subgroupID = (item.subject_subgroup_id || '').trim()
+      if (groupID) allowedGroupIDs.add(groupID)
+      if (subgroupID) allowedSubgroupIDs.add(subgroupID)
+    }
+
+    const created = new Set(createdSubgroupIDs.value)
+    const groups = Array.isArray(groupsRes.data) ? groupsRes.data : []
+    subjectGroupRows.value = groups.filter(item => allowedGroupIDs.has(item.id))
+    rows.value = (Array.isArray(subgroupsRes.data) ? subgroupsRes.data : [])
+      .filter(item => allowedSubgroupIDs.has(item.id) || created.has(item.id))
+      .map(mapRow)
   }
   catch {
     subjectGroupRows.value = []
@@ -264,6 +295,7 @@ async function saveRow() {
         headers: authHeaders(),
         body: payload,
       })
+      createdSubgroupIDs.value = Array.from(new Set([...createdSubgroupIDs.value, res.data.id]))
       rows.value.push(mapRow(res.data))
     }
     showModal.value = false
@@ -293,6 +325,7 @@ async function confirmDelete() {
       method: 'DELETE',
       headers: authHeaders(),
     })
+    createdSubgroupIDs.value = createdSubgroupIDs.value.filter(id => id !== deleteTarget.value!.id)
     rows.value = rows.value.filter(r => r.id !== deleteTarget.value!.id)
     deleteTarget.value = null
   }

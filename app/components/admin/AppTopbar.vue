@@ -11,6 +11,15 @@
     </div>
 
     <div class="topbar-right">
+      <button
+        v-if="isSuperAdmin"
+        type="button"
+        class="switch-school-btn"
+        @click="openSwitchSchool"
+      >
+        สลับโรงเรียน
+      </button>
+
       <button type="button" class="notif-btn" aria-label="การแจ้งเตือน">
         <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
           <path d="M9 2a5.5 5.5 0 0 1 5.5 5.5c0 2.5.8 3.8 1.5 4.5H2c.7-.7 1.5-2 1.5-4.5A5.5 5.5 0 0 1 9 2z" stroke="#6b7280" stroke-width="1.4" fill="none" />
@@ -44,6 +53,25 @@
       confirm-label="ออกจากระบบ"
       @confirm="confirmLogout"
     />
+
+    <AdminAppModal
+      v-model="showSwitchSchool"
+      title="เลือกโรงเรียนที่ต้องการจัดการ"
+      size="sm"
+      confirm-label="ยืนยัน"
+      @confirm="confirmSwitchSchool"
+    >
+      <div class="switch-school-wrap">
+        <p class="switch-school-hint">เลือกโรงเรียนเพื่อเข้าสู่บริบทการจัดการของโรงเรียนนั้น</p>
+        <select v-model="selectedSchoolId" class="switch-school-select">
+          <option value="" disabled>-- เลือกโรงเรียน --</option>
+          <option v-for="school in schoolOptions" :key="school.id" :value="school.id">
+            {{ school.name }}
+          </option>
+        </select>
+        <p v-if="switchSchoolError" class="switch-school-error">{{ switchSchoolError }}</p>
+      </div>
+    </AdminAppModal>
   </header>
 </template>
 
@@ -54,13 +82,17 @@ import { useRoute } from 'vue-router'
 defineEmits<{ (e: 'toggle-sidebar'): void }>()
 
 const route = useRoute()
-const { avatarText, displayName, displayRole, clearSession } = useAdminAuth()
+const { avatarText, displayName, displayRole, clearSession, isSuperAdmin, listSchools, switchSchool, profile } = useAdminAuth()
 const showLogoutConfirm = ref(false)
+const showSwitchSchool = ref(false)
+const selectedSchoolId = ref('')
+const schoolOptions = ref<Array<{ id: string, name: string }>>([])
+const switchSchoolError = ref('')
 
 const titleMap: Record<string, string> = {
   '/admin': 'ภาพรวมระบบ',
-  '/admin/school': 'จัดการข้อมูลโรงเรียน',
-  '/admin/personnel': 'บุคลากร',
+  '/admin/schools': 'จัดการข้อมูลโรงเรียน',
+  '/admin/personnels': 'บุคลากร',
   '/admin/teachers': 'ครู',
   '/admin/students': 'นักเรียน',
   '/admin/approvals': 'อนุมัติคำขอ',
@@ -73,6 +105,40 @@ const confirmLogout = async () => {
   showLogoutConfirm.value = false
   clearSession()
   await navigateTo('/')
+}
+
+const openSwitchSchool = async () => {
+  switchSchoolError.value = ''
+  showSwitchSchool.value = true
+
+  try {
+    const schools = await listSchools()
+    schoolOptions.value = schools.map((school) => ({
+      id: school.id,
+      name: school.name,
+    }))
+    selectedSchoolId.value = profile.value.schoolId || schools[0]?.id || ''
+  }
+  catch {
+    switchSchoolError.value = 'ไม่สามารถโหลดรายชื่อโรงเรียนได้'
+  }
+}
+
+const confirmSwitchSchool = async () => {
+  switchSchoolError.value = ''
+  if (!selectedSchoolId.value) {
+    switchSchoolError.value = 'กรุณาเลือกโรงเรียน'
+    return
+  }
+
+  try {
+    await switchSchool(selectedSchoolId.value)
+    showSwitchSchool.value = false
+    await navigateTo('/admin/schools')
+  }
+  catch {
+    switchSchoolError.value = 'สลับบริบทโรงเรียนไม่สำเร็จ'
+  }
 }
 </script>
 
@@ -121,6 +187,20 @@ const confirmLogout = async () => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.switch-school-btn {
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.switch-school-btn:hover {
+  background: #dbeafe;
 }
 
 .notif-btn {
@@ -212,5 +292,32 @@ const confirmLogout = async () => {
 
 .logout-btn:hover svg path {
   stroke: #ef4444;
+}
+
+.switch-school-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.switch-school-hint {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #6b7280;
+}
+
+.switch-school-select {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 9px 10px;
+  font-size: 0.86rem;
+  background: #fff;
+  color: #111827;
+}
+
+.switch-school-error {
+  margin: 0;
+  color: #dc2626;
+  font-size: 0.78rem;
 }
 </style>

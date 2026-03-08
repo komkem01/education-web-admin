@@ -92,6 +92,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useAdminAuth } from '~/composables/useAdminAuth'
 
 definePageMeta({ layout: 'admin' })
 
@@ -104,6 +105,11 @@ type SubjectGroupApiItem = {
   head: string | null
   description: string | null
   is_active: boolean
+}
+
+type SubjectApiItem = {
+  id: string
+  subject_group_id: string | null
 }
 
 type PersonApiItem = {
@@ -128,8 +134,10 @@ type SubjectGroupRow = {
 const { loading } = usePageLoad()
 const config = useRuntimeConfig()
 const authToken = useCookie<string | null>('edu_auth_token')
+const { profile } = useAdminAuth()
 const rows = ref<SubjectGroupRow[]>([])
 const headOptions = ref<Option[]>([])
+const createdGroupIDs = ref<string[]>([])
 
 function authHeaders() {
   return { Authorization: `Bearer ${authToken.value}` }
@@ -156,9 +164,29 @@ function mapRow(item: SubjectGroupApiItem): SubjectGroupRow {
 
 async function loadRows() {
   if (!import.meta.client || !authToken.value) return
+
+  const schoolID = profile.value.schoolId
+  if (!schoolID) {
+    rows.value = []
+    return
+  }
+
   try {
-    const res = await apiFetch<BaseResponse<SubjectGroupApiItem[]>>('/subject-groups?only_active=false', { headers: authHeaders() })
-    rows.value = (Array.isArray(res.data) ? res.data : []).map(mapRow)
+    const [groupsRes, subjectsRes] = await Promise.all([
+      apiFetch<BaseResponse<SubjectGroupApiItem[]>>('/subject-groups?only_active=false', { headers: authHeaders() }),
+      apiFetch<BaseResponse<SubjectApiItem[]>>(`/subjects?school_id=${schoolID}`, { headers: authHeaders() }),
+    ])
+
+    const allowedGroupIDs = new Set<string>()
+    for (const item of (Array.isArray(subjectsRes.data) ? subjectsRes.data : [])) {
+      const groupID = (item.subject_group_id || '').trim()
+      if (groupID) allowedGroupIDs.add(groupID)
+    }
+
+    const created = new Set(createdGroupIDs.value)
+    rows.value = (Array.isArray(groupsRes.data) ? groupsRes.data : [])
+      .filter(item => allowedGroupIDs.has(item.id) || created.has(item.id))
+      .map(mapRow)
   }
   catch {
     rows.value = []
@@ -287,6 +315,7 @@ async function saveRow() {
         headers: authHeaders(),
         body: payload,
       })
+      createdGroupIDs.value = Array.from(new Set([...createdGroupIDs.value, res.data.id]))
       rows.value.push(mapRow(res.data))
     }
     showModal.value = false
@@ -316,6 +345,7 @@ async function confirmDelete() {
       method: 'DELETE',
       headers: authHeaders(),
     })
+    createdGroupIDs.value = createdGroupIDs.value.filter(id => id !== deleteTarget.value!.id)
     rows.value = rows.value.filter(r => r.id !== deleteTarget.value!.id)
     deleteTarget.value = null
   }

@@ -159,7 +159,7 @@ type Feature = { label: string; perms: Record<string, Perm> }
 
 const { loading } = usePageLoad()
 const config = useRuntimeConfig()
-const authToken = useCookie<string | null>('edu_auth_token')
+const { authToken, isSuperAdmin } = useAdminAuth()
 const members = ref<UserRow[]>([])
 
 function authHeaders() {
@@ -177,6 +177,7 @@ async function apiFetch<T>(path: string, options?: Parameters<typeof $fetch<T>>[
 
 function toRoleLabel(role: string) {
   const map: Record<string, string> = {
+    super_admin: 'ผู้ดูแลระบบส่วนกลาง',
     admin: 'แอดมิน',
     staff: 'บุคลากร',
     teacher: 'ครู',
@@ -246,7 +247,11 @@ const combos = [
   { a: 'บุคลากร', b: 'ครู', note: 'สอนและอนุมัติคำขอได้ในคนเดียวกัน' },
 ]
 
-const roleOptions = ['admin', 'staff', 'teacher', 'student', 'parent']
+const roleOptions = computed(() => {
+  const baseRoles = ['admin', 'staff', 'teacher', 'student', 'parent']
+  if (isSuperAdmin.value) return ['super_admin', ...baseRoles]
+  return baseRoles
+})
 
 const showAssignModal = ref(false)
 const assignForm = ref({ memberId: '', role: '' })

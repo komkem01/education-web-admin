@@ -123,7 +123,7 @@
           <label class="field field--full">
             <span>บทบาทในระบบ</span>
             <div class="checkbox-row">
-              <label v-for="r in roleOptions" :key="r.value" class="checkbox-item">
+              <label v-for="r in roleOptionsForForm" :key="r.value" class="checkbox-item">
                 <input type="checkbox" :value="r.value" :checked="form.roles.includes(r.value)" @change="toggleRole(r.value)" />
                 {{ r.label }}
               </label>
@@ -160,7 +160,7 @@ definePageMeta({ layout: 'admin' })
 const { loading } = usePageLoad()
 const config = useRuntimeConfig()
 const authToken = useCookie<string | null>('edu_auth_token')
-const { profile } = useAdminAuth()
+const { profile, isSuperAdmin } = useAdminAuth()
 
 type BaseResponse<T> = { data: T }
 type MemberRoleResponse = { member_id: string, roles: string[] }
@@ -250,6 +250,10 @@ type PersonnelForm = {
 
 const roleOptions = [
   { value: 'staff', label: 'บุคลากร (Staff)' },
+  { value: 'admin', label: 'แอดมิน (Admin)' },
+]
+
+const createRoleOptions = [
   { value: 'admin', label: 'แอดมิน (Admin)' },
 ]
 
@@ -373,11 +377,15 @@ async function loadRows() {
       const staff = staffByMember.get(member.id)
       const admin = adminByMember.get(member.id)
       if (!staff && !admin) continue
+      if (isSuperAdmin.value && !admin) continue
 
       const roles: string[] = []
       if (staff) roles.push('staff')
       if (admin) roles.push('admin')
       if (roles.length === 0 && (member.role === 'staff' || member.role === 'admin')) roles.push(member.role)
+      if (isSuperAdmin.value) {
+        roles.splice(0, roles.length, 'admin')
+      }
 
       const name = fullName(staff?.first_name || admin?.first_name || null, staff?.last_name || admin?.last_name || null) || member.email
       const firstName = (staff?.first_name || admin?.first_name || '').trim()
@@ -429,6 +437,12 @@ const showConfirm = ref(false)
 const editTarget = ref<PersonnelRow | null>(null)
 const deleteTarget = ref<PersonnelRow | null>(null)
 
+const roleOptionsForForm = computed(() => {
+  if (isSuperAdmin.value) return createRoleOptions
+  if (editTarget.value) return roleOptions
+  return roleOptions
+})
+
 const emptyForm = (): PersonnelForm => ({
   memberId: '',
   personnelCode: '',
@@ -437,7 +451,7 @@ const emptyForm = (): PersonnelForm => ({
   genderId: '',
   prefixId: '',
   dept: '',
-  roles: ['staff'],
+  roles: [isSuperAdmin.value ? 'admin' : 'staff'],
   phone: '',
   status: 'ใช้งาน',
   email: '',
@@ -481,7 +495,7 @@ function openEdit(row: PersonnelRow) {
     genderId: row.genderId,
     prefixId: row.prefixId,
     dept: row.dept,
-    roles: [...row.roles],
+    roles: isSuperAdmin.value ? ['admin'] : [...row.roles],
     phone: row.phone,
     status: row.status,
     email: row.email,
@@ -525,7 +539,9 @@ async function saveRow() {
     return
   }
 
-  const selectedRoles = [...new Set(form.value.roles.filter((r): r is PersonnelRole => r === 'admin' || r === 'staff'))]
+  const selectedRoles = isSuperAdmin.value
+    ? ['admin']
+    : [...new Set(form.value.roles.filter((r): r is PersonnelRole => r === 'admin' || r === 'staff'))]
   const active = form.value.status === 'ใช้งาน'
   const firstName = form.value.firstName.trim() || null
   const lastName = form.value.lastName.trim() || null

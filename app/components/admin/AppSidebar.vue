@@ -25,7 +25,7 @@
 
     <!-- Nav -->
     <nav class="nav">
-      <template v-for="group in navGroups" :key="group.id">
+      <template v-for="group in activeNavGroups" :key="group.id">
         <!-- ── COLLAPSED MODE: icon-only list ── -->
         <template v-if="collapsed">
           <div class="collapsed-group">
@@ -94,14 +94,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 defineProps<{ collapsed: boolean }>()
 defineEmits<{ (e: 'toggle'): void }>()
 
 const route = useRoute()
-const { avatarText, displayName, displayRole, schoolDisplay } = useAdminAuth()
+const { avatarText, displayName, displayRole, schoolDisplay, isSuperAdmin } = useAdminAuth()
 
 const ICON_DASHBOARD = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor" fill-opacity=".8"/><rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor" fill-opacity=".8"/><rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor" fill-opacity=".8"/><rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" fill-opacity=".8"/></svg>`
 const ICON_SCHOOL = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 7.5L8 3l6 4.5V14H2V7.5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" fill="none"/><rect x="5.5" y="10" width="5" height="4" rx="0.5" stroke="currentColor" stroke-width="1.4" fill="none"/></svg>`
@@ -181,14 +181,27 @@ const navGroups = [
   },
 ]
 
+const superAdminNavGroups = [
+  {
+    id: 'platform',
+    label: 'Platform Admin',
+    items: [
+      { path: '/admin/schools', label: 'จัดการโรงเรียน', icon: ICON_SCHOOL },
+      { path: '/admin/personnels', label: 'สร้างแอดมินโรงเรียน', icon: ICON_PERSON },
+    ],
+  },
+]
+
+const activeNavGroups = computed(() => (isSuperAdmin.value ? superAdminNavGroups : navGroups))
+
 // ── Accordion state ──
 const openGroups = ref<Set<string>>(new Set())
 
 function getActiveGroupId(path: string) {
-  const found = navGroups.find(g =>
+  const found = activeNavGroups.value.find(g =>
     g.items.some(item => path === item.path || path.startsWith(`${item.path}/`)),
   )
-  return found?.id ?? 'overview'
+  return found?.id ?? activeNavGroups.value[0]?.id ?? 'overview'
 }
 
 function toggleGroup(id: string) {

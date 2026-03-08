@@ -53,6 +53,23 @@ type SchoolResponse = {
   data: SchoolData
 }
 
+type SchoolsResponse = {
+  data: SchoolData[]
+}
+
+type SwitchSchoolData = {
+  access_token: string
+  token_type: string
+  expires_at: string
+  role: string
+  roles: string[]
+  school_id: string
+}
+
+type SwitchSchoolResponse = {
+  data: SwitchSchoolData
+}
+
 const roleEndpointMap: Record<string, string> = {
   admin: 'admins',
   staff: 'staffs',
@@ -78,6 +95,7 @@ function roleLabel(role: string | null | undefined): string {
 
   const map: Record<string, string> = {
     admin: 'ผู้ดูแลระบบ',
+    super_admin: 'ผู้ดูแลระบบส่วนกลาง',
     staff: 'เจ้าหน้าที่',
     teacher: 'ครู',
     student: 'นักเรียน',
@@ -134,6 +152,10 @@ export function useAdminAuth() {
   const authPhone = useCookie<string | null>('edu_auth_phone', baseCookieOptions)
 
   const roles = computed(() => parseRoles(authRoles.value))
+  const isSuperAdmin = computed(() => {
+    if (activeRole.value === 'super_admin' || authRole.value === 'super_admin') return true
+    return roles.value.includes('super_admin')
+  })
 
   const profile = computed(() => ({
     memberId: authMemberId.value,
@@ -349,6 +371,61 @@ export function useAdminAuth() {
     }
   }
 
+  async function listSchools() {
+    if (!authToken.value) return [] as SchoolData[]
+
+    const headers = {
+      Authorization: `Bearer ${authToken.value}`,
+    }
+
+    try {
+      const res = await $fetch<SchoolsResponse>(`${config.public.apiBase}/back-office/schools`, {
+        headers,
+      })
+      return res.data ?? []
+    }
+    catch {
+      const res = await $fetch<SchoolsResponse>(`${config.public.apiBase}/schools`, {
+        headers,
+      })
+      return res.data ?? []
+    }
+  }
+
+  async function switchSchool(schoolId: string) {
+    if (!authToken.value) throw new Error('missing-auth-token')
+
+    const body = { school_id: schoolId }
+    const headers = {
+      Authorization: `Bearer ${authToken.value}`,
+    }
+
+    let switchRes: SwitchSchoolResponse
+    try {
+      switchRes = await $fetch<SwitchSchoolResponse>(`${config.public.apiBase}/auth/switch-school`, {
+        method: 'POST',
+        headers,
+        body,
+      })
+    }
+    catch {
+      switchRes = await $fetch<SwitchSchoolResponse>(`${config.public.apiBase}/back-office/auth/switch-school`, {
+        method: 'POST',
+        headers,
+        body,
+      })
+    }
+
+    authToken.value = switchRes.data.access_token
+    activeRole.value = switchRes.data.role
+    authRole.value = switchRes.data.role
+    authRoles.value = JSON.stringify(switchRes.data.roles ?? [])
+    authExpiresAt.value = switchRes.data.expires_at
+    authSchoolId.value = switchRes.data.school_id
+
+    await fetchMe()
+  }
+
   function setSession(input: {
     accessToken: string
     activeRole: string
@@ -447,6 +524,7 @@ export function useAdminAuth() {
     profile,
     displayName,
     displayRole,
+    isSuperAdmin,
     schoolDisplay,
     avatarText,
     setSession,
@@ -454,6 +532,8 @@ export function useAdminAuth() {
     fetchMe,
     fetchMemberProfileByMemberId,
     fetchSchoolProfileById,
+    listSchools,
+    switchSchool,
     refreshAccessToken,
     setupAutoRefresh,
     clearSession,
