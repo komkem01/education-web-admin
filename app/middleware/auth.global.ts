@@ -1,20 +1,5 @@
 export default defineNuxtRouteMiddleware((to) => {
-  const authToken = useCookie<string | null>('edu_auth_token')
-  const activeRole = useCookie<string | null>('edu_active_role')
-  const authMemberId = useCookie<string | null>('edu_auth_member_id')
-  const authSchoolId = useCookie<string | null>('edu_auth_school_id')
-  const authRole = useCookie<string | null>('edu_auth_role')
-  const authExpiresAt = useCookie<string | null>('edu_auth_expires_at')
-  const config = useRuntimeConfig()
-
-  function clearAuthContext() {
-    authToken.value = null
-    activeRole.value = null
-    authMemberId.value = null
-    authSchoolId.value = null
-    authRole.value = null
-    authExpiresAt.value = null
-  }
+  const { authToken, activeRole, fetchMe, clearSession } = useAdminAuth()
 
   const isLoggedIn = Boolean(authToken.value)
   const isAdminRole = activeRole.value === 'admin'
@@ -24,13 +9,9 @@ export default defineNuxtRouteMiddleware((to) => {
     if (!authToken.value || !isAdminRole) return false
 
     try {
-      const res = await $fetch<{ data: { role: string; roles: string[] } }>(`${config.public.apiBase}/auth/me`, {
-        headers: {
-          Authorization: `Bearer ${authToken.value}`,
-        },
-      })
-      const role = res.data.role
-      const roles = res.data.roles ?? []
+      const me = await fetchMe()
+      const role = me.role
+      const roles = me.roles ?? []
       return role === 'admin' || roles.includes('admin')
     }
     catch {
@@ -39,14 +20,14 @@ export default defineNuxtRouteMiddleware((to) => {
   }
 
   if ((!isLoggedIn || !isAdminRole) && isAdminArea) {
-    clearAuthContext()
+    clearSession()
     return navigateTo('/')
   }
 
   if (isLoggedIn && isAdminRole) {
     return isSessionValid().then((ok) => {
       if (!ok) {
-        clearAuthContext()
+        clearSession()
         return navigateTo('/')
       }
 

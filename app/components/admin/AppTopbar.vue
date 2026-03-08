@@ -22,13 +22,13 @@
       <div class="divider" />
 
       <div class="user-chip">
-        <div class="user-avatar">ส</div>
+        <div class="user-avatar">{{ avatarText }}</div>
         <div class="user-detail">
-          <span class="user-name">สมชาย มั่นคง</span>
-          <span class="user-role">แอดมิน</span>
+          <span class="user-name">{{ displayName }}</span>
+          <span class="user-role">{{ displayRole }}</span>
         </div>
 
-        <button type="button" class="logout-btn" @click="logout" title="ออกจากระบบ">
+        <button type="button" class="logout-btn" @click="showLogoutConfirm = true" title="ออกจากระบบ">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <path d="M10.5 5.5L13 8l-2.5 2.5M13 8H6.5" stroke="#9ca3af" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
             <path d="M6.5 3H3.5A1 1 0 0 0 2.5 4v8a1 1 0 0 0 1 1h3" stroke="#9ca3af" stroke-width="1.5" stroke-linecap="round" />
@@ -36,18 +36,26 @@
         </button>
       </div>
     </div>
+
+    <AdminAppConfirmModal
+      v-model="showLogoutConfirm"
+      title="ยืนยันการออกจากระบบ?"
+      description="คุณต้องการออกจากระบบตอนนี้ใช่หรือไม่"
+      confirm-label="ออกจากระบบ"
+      @confirm="confirmLogout"
+    />
   </header>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
 defineEmits<{ (e: 'toggle-sidebar'): void }>()
 
 const route = useRoute()
-const authToken = useCookie<string | null>('edu_auth_token')
-const roleCookie = useCookie<string | null>('edu_active_role')
+const { avatarText, displayName, displayRole, clearSession } = useAdminAuth()
+const showLogoutConfirm = ref(false)
 
 const titleMap: Record<string, string> = {
   '/admin': 'ภาพรวมระบบ',
@@ -61,13 +69,9 @@ const titleMap: Record<string, string> = {
 
 const title = computed(() => titleMap[route.path] ?? 'แผงควบคุม')
 
-if (roleCookie.value !== 'admin') {
-  roleCookie.value = 'admin'
-}
-
-const logout = async () => {
-  authToken.value = null
-  roleCookie.value = null
+const confirmLogout = async () => {
+  showLogoutConfirm.value = false
+  clearSession()
   await navigateTo('/')
 }
 </script>

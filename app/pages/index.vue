@@ -20,6 +20,8 @@ type MeResponse = {
     member_id: string
     school_id: string
     role: string
+    roles: string[]
+    issued_at: string
     expires_at: string
   }
 }
@@ -30,12 +32,7 @@ const errorMessage = ref('')
 const loading = ref(false)
 const config = useRuntimeConfig()
 
-const authToken = useCookie<string | null>('edu_auth_token')
-const activeRole = useCookie<string | null>('edu_active_role')
-const authMemberId = useCookie<string | null>('edu_auth_member_id')
-const authSchoolId = useCookie<string | null>('edu_auth_school_id')
-const authRole = useCookie<string | null>('edu_auth_role')
-const authExpiresAt = useCookie<string | null>('edu_auth_expires_at')
+const { authToken, setSession, fetchMemberProfileByMemberId, fetchSchoolProfileById } = useAdminAuth()
 
 if (authToken.value) {
   await navigateTo('/admin')
@@ -84,12 +81,18 @@ const handleLogin = async () => {
       },
     })
 
-    authToken.value = accessToken
-    activeRole.value = 'admin'
-    authMemberId.value = meRes.data.member_id
-    authSchoolId.value = meRes.data.school_id
-    authRole.value = meRes.data.role
-    authExpiresAt.value = meRes.data.expires_at
+    setSession({
+      accessToken,
+      activeRole: 'admin',
+      email: loginRes.data.member.email,
+      me: meRes.data,
+    })
+
+    await Promise.all([
+      fetchMemberProfileByMemberId(meRes.data.member_id, meRes.data.role),
+      fetchSchoolProfileById(meRes.data.school_id),
+    ])
+
     await navigateTo('/admin')
   }
   catch (error: any) {

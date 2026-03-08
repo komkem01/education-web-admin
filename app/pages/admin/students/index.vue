@@ -1,26 +1,17 @@
 <template>
   <div class="page">
-    <AdminAppSkeletonLoader v-if="loading" :rows="5" :cols="7" />
+    <AdminAppSkeletonLoader v-if="loading" :rows="5" :cols="6" />
     <template v-else>
-      <!-- Header -->
       <div class="page-header">
         <div>
           <h2 class="page-title">นักเรียน</h2>
-          <p class="page-desc">จัดการข้อมูลนักเรียน, การย้ายเข้า/ออก และการเลื่อนชั้นปี</p>
+          <p class="page-desc">จัดการข้อมูลนักเรียนทั้งหมดในโรงเรียน</p>
+          <p v-if="errorMessage" class="inline-error">{{ errorMessage }}</p>
+          <p v-if="pageLoading" class="inline-loading">กำลังโหลดข้อมูลนักเรียน...</p>
         </div>
-        <div class="header-actions">
-          <button type="button" class="btn btn-outline">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-            เลื่อนชั้นปี (Bulk)
-          </button>
-          <button type="button" class="btn btn-primary" @click="openAdd">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-            เพิ่มนักเรียน
-          </button>
-        </div>
+        <button type="button" class="btn btn-primary" @click="openAdd">+ เพิ่มนักเรียน</button>
       </div>
 
-      <!-- Filters -->
       <div class="filter-row">
         <div class="search-wrap">
           <svg class="search-icon" width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="6.5" cy="6.5" r="4.5" stroke="#9ca3af" stroke-width="1.4"/><path d="M10 10l3 3" stroke="#9ca3af" stroke-width="1.4" stroke-linecap="round"/></svg>
@@ -29,108 +20,116 @@
             class="input search"
             list="student-search-list"
             type="text"
-            placeholder="ค้นหาชื่อ หรือ เลขประจำตัวนักเรียน..."
+            placeholder="ค้นหาชื่อ หรือ รหัสนักเรียน..."
             autocomplete="off"
           />
           <datalist id="student-search-list">
-            <option v-for="r in rows" :key="r.id" :value="r.name" />
-            <option v-for="r in rows" :key="r.id + '-id'" :value="r.id" />
+            <option v-for="r in rows" :key="r.studentId" :value="r.name" />
+            <option v-for="r in rows" :key="`${r.studentId}-code`" :value="r.code" />
           </datalist>
         </div>
-        <select v-model="filterClass" class="input sel">
-          <option value="">ทุกระดับชั้น</option>
-          <option>ม.1</option>
-          <option>ม.2</option>
-          <option>ม.3</option>
-          <option>ม.4</option>
-          <option>ม.5</option>
-          <option>ม.6</option>
-        </select>
-        <select v-model="filterStatus" class="input sel">
-          <option value="">ทุกสถานะ</option>
-          <option>ปกติ</option>
-          <option>รออนุมัติ</option>
-          <option>ย้ายออก</option>
-          <option>ลาออก</option>
-        </select>
-        <button v-if="search || filterClass || filterStatus" type="button" class="btn btn-clear" @click="clearFilters">ล้างตัวกรอง</button>
+
+        <AdminSearchSelect
+          v-model="filterClassroom"
+          class="sel"
+          :options="classroomFilterOptions"
+          placeholder="ห้องเรียนทั้งหมด"
+          :clearable="true"
+        />
+
+        <button v-if="search || filterClassroom" type="button" class="btn btn-clear" @click="clearFilters">ล้างตัวกรอง</button>
       </div>
 
-      <!-- Table -->
       <AdminDataTable title="รายชื่อนักเรียน" :columns="cols" :rows="filteredRows">
         <template #cell-status="{ value }">
-          <AdminStatusBadge
-            :label="value as string"
-            :variant="value === 'ปกติ' ? 'approved' : value === 'รออนุมัติ' ? 'pending' : 'default'"
-          />
+          <AdminStatusBadge :label="value as string" :variant="value === 'ปกติ' ? 'approved' : 'default'" />
         </template>
         <template #rowActions="{ row }">
           <div class="action-btns">
             <button type="button" class="btn btn-sm btn-detail" @click="openDetail(row as unknown as StudentRow)">รายละเอียด</button>
             <button type="button" class="btn btn-sm btn-edit" @click="openEdit(row as unknown as StudentRow)">แก้ไข</button>
-            <button type="button" class="btn btn-sm btn-danger" @click="openDelete(row as unknown as StudentRow)">ลบ</button>
+            <button type="button" class="btn btn-sm btn-delete" @click="openDelete(row as unknown as StudentRow)">ลบ</button>
           </div>
         </template>
       </AdminDataTable>
 
-      <!-- Add / Edit Modal -->
-      <AdminAppModal
-        v-model="showModal"
-        :title="editTarget ? 'แก้ไขข้อมูลนักเรียน' : 'เพิ่มนักเรียนใหม่'"
-        size="md"
-        confirm-label="บันทึก"
-        @confirm="saveRow"
-      >
+      <AdminAppModal v-model="showModal" :title="editTarget ? 'แก้ไขข้อมูลนักเรียน' : 'เพิ่มนักเรียนใหม่'" size="md" confirm-label="บันทึก" @confirm="saveRow">
         <div class="form-grid">
           <label class="field">
-            <span>เลขประจำตัวนักเรียน <span v-if="!editTarget" class="req">*</span></span>
-            <input
-              v-if="!editTarget"
-              v-model="form.id"
-              class="input"
-              type="text"
-              placeholder="66100001"
-            />
+            <span>รหัสนักเรียน</span>
+            <input v-if="!editTarget" v-model="form.code" class="input" type="text" placeholder="ปล่อยว่างให้ระบบสร้างอัตโนมัติ" />
             <div v-else class="id-display">
-              <span class="id-badge">{{ form.id }}</span>
+              <span class="id-badge">{{ form.code || '-' }}</span>
               <span class="id-hint">รหัสไม่สามารถแก้ไขได้</span>
             </div>
-            <span v-if="formErrors.id" class="field-error">{{ formErrors.id }}</span>
           </label>
+
+          <label v-if="!editTarget" class="field">
+            <span>อีเมลผู้ใช้งาน <span class="req">*</span></span>
+            <input v-model="form.email" class="input" type="email" placeholder="student@school.ac.th" />
+            <span v-if="formErrors.email" class="field-error">{{ formErrors.email }}</span>
+          </label>
+
+          <label v-if="!editTarget" class="field">
+            <span>รหัสผ่าน <span class="req">*</span></span>
+            <input v-model="form.password" class="input" type="password" placeholder="อย่างน้อย 6 ตัวอักษร" />
+            <span v-if="formErrors.password" class="field-error">{{ formErrors.password }}</span>
+          </label>
+
           <label class="field">
-            <span>ชื่อ-นามสกุล <span class="req">*</span></span>
-            <input v-model="form.name" class="input" type="text" placeholder="เด็กชาย/เด็กหญิง/นาย/นางสาว..." />
-            <span v-if="formErrors.name" class="field-error">{{ formErrors.name }}</span>
+            <span>เพศ</span>
+            <AdminSearchSelect v-model="form.genderId" :options="genderOptions" placeholder="เลือกเพศ" />
           </label>
+
           <label class="field">
-            <span>ชั้น/ห้อง</span>
-            <input v-model="form.class" class="input" type="text" placeholder="ม.1/1" />
+            <span>คำนำหน้า</span>
+            <AdminSearchSelect v-model="form.prefixId" :options="prefixOptions" placeholder="เลือกคำนำหน้า" />
           </label>
+
+          <label class="field">
+            <span>ชื่อ <span class="req">*</span></span>
+            <input v-model="form.firstName" class="input" type="text" placeholder="ชื่อ" />
+            <span v-if="formErrors.firstName" class="field-error">{{ formErrors.firstName }}</span>
+          </label>
+
+          <label class="field">
+            <span>นามสกุล <span class="req">*</span></span>
+            <input v-model="form.lastName" class="input" type="text" placeholder="นามสกุล" />
+            <span v-if="formErrors.lastName" class="field-error">{{ formErrors.lastName }}</span>
+          </label>
+
+          <label class="field">
+            <span>ห้องเรียนปัจจุบัน</span>
+            <AdminSearchSelect v-model="form.currentClassroomId" :options="classroomOptions" placeholder="เลือกห้องเรียน" />
+          </label>
+
           <label class="field">
             <span>ครูที่ปรึกษา</span>
-            <input v-model="form.advisor" class="input" type="text" placeholder="ชื่อครูที่ปรึกษา" />
+            <AdminSearchSelect v-model="form.advisorTeacherId" :options="advisorOptions" placeholder="เลือกครูที่ปรึกษา" />
           </label>
+
           <label class="field">
-            <span>GPA</span>
-            <input v-model="form.gpa" class="input" type="text" placeholder="0.00" />
+            <span>เลขบัตรประชาชน</span>
+            <input v-model="form.citizenId" class="input" type="text" placeholder="13 หลัก" />
           </label>
+
           <label class="field">
-            <span>คะแนนประพฤติ</span>
-            <input v-model.number="form.discipline" class="input" type="number" min="0" max="100" placeholder="100" />
+            <span>เบอร์โทรศัพท์</span>
+            <input v-model="form.phone" class="input" type="text" placeholder="08x-xxx-xxxx" />
           </label>
-          <label class="field field--full">
-            <span>สถานะ</span>
-            <select v-model="form.status" class="input">
-              <option>ปกติ</option>
-              <option>รออนุมัติ</option>
-              <option>ย้ายออก</option>
-              <option>ลาออก</option>
-            </select>
+
+          <label class="field">
+            <span>เลขที่ประจำห้อง</span>
+            <input v-model.number="form.defaultStudentNo" class="input" type="number" min="1" placeholder="เช่น 12" />
+          </label>
+
+          <label class="field">
+            <span>สถานะบัญชี</span>
+            <AdminSearchSelect v-model="form.status" :options="statusOptions" placeholder="เลือกสถานะ" :searchable="false" />
           </label>
         </div>
       </AdminAppModal>
 
-      <!-- Confirm Delete -->
       <AdminAppConfirmModal
         v-model="showConfirm"
         :description="`ต้องการลบนักเรียน '${deleteTarget?.name}' ออกจากระบบหรือไม่?`"
@@ -141,106 +140,436 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useStudentsData, type StudentRow } from '~/composables/useStudentsData'
+import { computed, ref } from 'vue'
 
 definePageMeta({ layout: 'admin' })
 
+type BaseResponse<T> = { data: T }
+
+type StudentApiItem = {
+  id: string
+  member_id: string
+  gender_id: string | null
+  prefix_id: string | null
+  advisor_teacher_id: string | null
+  current_classroom_id: string | null
+  student_code: string | null
+  default_student_no: number | null
+  first_name: string | null
+  last_name: string | null
+  citizen_id: string | null
+  phone: string | null
+  is_active: boolean
+}
+
+type TeacherApiItem = {
+  id: string
+  teacher_code: string | null
+  first_name: string | null
+  last_name: string | null
+}
+
+type ClassroomItem = {
+  id: string
+  name: string
+  grade_level: string | null
+  room_no: string | null
+}
+
+type GenderItem = {
+  id: string
+  name: string
+  is_active: boolean
+}
+
+type PrefixItem = {
+  id: string
+  gender_id: string | null
+  name: string
+  is_active: boolean
+}
+
+type StudentRow = {
+  studentId: string
+  memberId: string
+  genderId: string
+  prefixId: string
+  advisorTeacherId: string
+  currentClassroomId: string
+  gender: string
+  prefix: string
+  firstName: string
+  lastName: string
+  code: string
+  name: string
+  classroom: string
+  advisor: string
+  defaultStudentNo: number | null
+  citizenId: string
+  phone: string
+  status: string
+  email: string
+}
+
+type StudentForm = {
+  studentId: string
+  memberId: string
+  genderId: string
+  prefixId: string
+  advisorTeacherId: string
+  currentClassroomId: string
+  firstName: string
+  lastName: string
+  code: string
+  defaultStudentNo: number | null
+  citizenId: string
+  phone: string
+  status: string
+  email: string
+  password: string
+}
+
 const { loading } = usePageLoad()
+const config = useRuntimeConfig()
+const authToken = useCookie<string | null>('edu_auth_token')
+const { profile } = useAdminAuth()
+
+const rows = ref<StudentRow[]>([])
+const pageLoading = ref(false)
+const errorMessage = ref('')
+const genderRows = ref<GenderItem[]>([])
+const prefixRows = ref<PrefixItem[]>([])
+const teacherRows = ref<TeacherApiItem[]>([])
+const classroomRows = ref<ClassroomItem[]>([])
 
 const cols = [
-  { key: 'id', label: 'เลขประจำตัว' },
+  { key: 'code', label: 'รหัสนักเรียน' },
   { key: 'name', label: 'ชื่อ-นามสกุล' },
-  { key: 'class', label: 'ชั้น/ห้อง' },
+  { key: 'classroom', label: 'ห้องเรียน' },
   { key: 'advisor', label: 'ครูที่ปรึกษา' },
-  { key: 'gpa', label: 'GPA' },
-  { key: 'discipline', label: 'คะแนนประพฤติ' },
+  { key: 'phone', label: 'เบอร์โทร' },
   { key: 'status', label: 'สถานะ' },
 ]
 
-const { rows } = useStudentsData()
-
 const search = ref('')
-const filterClass = ref('')
-const filterStatus = ref('')
+const filterClassroom = ref('')
+
+const classroomFilterOptions = computed(() => ([
+  { label: 'ห้องเรียนทั้งหมด', value: '' },
+  ...classroomRows.value.map(item => ({ label: item.name, value: item.id })),
+]))
 
 const filteredRows = computed(() =>
-  rows.value.filter(r => {
-    const matchSearch = !search.value || r.name.includes(search.value) || r.id.includes(search.value)
-    const matchClass = !filterClass.value || r.class.startsWith(filterClass.value)
-    const matchStatus = !filterStatus.value || r.status === filterStatus.value
-    return matchSearch && matchClass && matchStatus
+  rows.value.filter((r) => {
+    const q = search.value.trim().toLowerCase()
+    const matchSearch = !q || r.name.toLowerCase().includes(q) || r.code.toLowerCase().includes(q)
+    const matchClassroom = !filterClassroom.value || r.currentClassroomId === filterClassroom.value
+    return matchSearch && matchClassroom
   }),
 )
 
+const statusOptions = [
+  { label: 'ปกติ', value: 'ปกติ' },
+  { label: 'ไม่ใช้งาน', value: 'ไม่ใช้งาน' },
+]
+
+const genderOptions = computed(() => [
+  { label: 'ไม่ระบุเพศ', value: '' },
+  ...genderRows.value.map(item => ({ label: item.name, value: item.id })),
+])
+
+const prefixOptions = computed(() => {
+  const targetGender = form.value.genderId || ''
+  const filtered = targetGender
+    ? prefixRows.value.filter(item => !item.gender_id || item.gender_id === targetGender)
+    : prefixRows.value
+
+  return [
+    { label: 'ไม่ระบุคำนำหน้า', value: '' },
+    ...filtered.map(item => ({ label: item.name, value: item.id })),
+  ]
+})
+
+const advisorOptions = computed(() => [
+  { label: 'ไม่ระบุครูที่ปรึกษา', value: '' },
+  ...teacherRows.value.map(item => ({
+    label: `${(item.first_name || '').trim()} ${(item.last_name || '').trim()}`.trim() || item.teacher_code || item.id,
+    value: item.id,
+  })),
+])
+
+const classroomOptions = computed(() => [
+  { label: 'ไม่ระบุห้องเรียน', value: '' },
+  ...classroomRows.value.map(item => ({ label: item.name, value: item.id })),
+])
+
+function authHeaders() {
+  return { Authorization: `Bearer ${authToken.value}` }
+}
+
+async function apiFetch<T>(path: string, options?: Parameters<typeof $fetch<T>>[1]) {
+  try {
+    return await $fetch<T>(`${config.public.apiBase}/back-office${path}`, options)
+  }
+  catch {
+    return await $fetch<T>(`${config.public.apiBase}${path}`, options)
+  }
+}
+
+function fullName(prefix: string, firstName: string | null, lastName: string | null) {
+  const name = `${(firstName || '').trim()} ${(lastName || '').trim()}`.trim()
+  if (!prefix) return name
+  return `${prefix}${name ? ` ${name}` : ''}`.trim()
+}
+
+function mapStatus(isActive: boolean) {
+  return isActive ? 'ปกติ' : 'ไม่ใช้งาน'
+}
+
+function toIsActive(status: string) {
+  return status === 'ปกติ'
+}
+
 function clearFilters() {
   search.value = ''
-  filterClass.value = ''
-  filterStatus.value = ''
+  filterClassroom.value = ''
 }
 
-function generateId() {
-  const nums = rows.value.map(r => parseInt(r.id.replace(/\D/g, '')) || 0)
-  return (Math.max(0, ...nums) + 1).toString().padStart(8, '0')
+function mapStudentRow(item: StudentApiItem): StudentRow {
+  const genderNameById = new Map(genderRows.value.map(g => [g.id, g.name] as const))
+  const prefixNameById = new Map(prefixRows.value.map(p => [p.id, p.name] as const))
+  const teacherNameById = new Map(teacherRows.value.map(t => {
+    const label = `${(t.first_name || '').trim()} ${(t.last_name || '').trim()}`.trim() || t.teacher_code || t.id
+    return [t.id, label] as const
+  }))
+  const classroomNameById = new Map(classroomRows.value.map(c => [c.id, c.name] as const))
+
+  const gender = (item.gender_id && genderNameById.get(item.gender_id)) || ''
+  const prefix = (item.prefix_id && prefixNameById.get(item.prefix_id)) || ''
+  const firstName = (item.first_name || '').trim()
+  const lastName = (item.last_name || '').trim()
+
+  return {
+    studentId: item.id,
+    memberId: item.member_id,
+    genderId: item.gender_id || '',
+    prefixId: item.prefix_id || '',
+    advisorTeacherId: item.advisor_teacher_id || '',
+    currentClassroomId: item.current_classroom_id || '',
+    gender,
+    prefix,
+    firstName,
+    lastName,
+    code: (item.student_code || '').trim() || item.id,
+    name: fullName(prefix, firstName, lastName) || '-',
+    classroom: (item.current_classroom_id && classroomNameById.get(item.current_classroom_id)) || '-',
+    advisor: (item.advisor_teacher_id && teacherNameById.get(item.advisor_teacher_id)) || '-',
+    defaultStudentNo: item.default_student_no,
+    citizenId: (item.citizen_id || '').trim(),
+    phone: (item.phone || '').trim(),
+    status: mapStatus(Boolean(item.is_active)),
+    email: '',
+  }
 }
 
-// ── CRUD ──
+async function loadRows() {
+  if (!import.meta.client || !authToken.value) return
+
+  pageLoading.value = true
+  errorMessage.value = ''
+
+  try {
+    const classroomQuery = profile.value.schoolId ? `?school_id=${profile.value.schoolId}` : ''
+
+    const [studentsRes, gendersRes, prefixesRes, teachersRes, classroomsRes] = await Promise.all([
+      apiFetch<BaseResponse<StudentApiItem[]>>('/students?only_active=false', { headers: authHeaders() }),
+      apiFetch<BaseResponse<GenderItem[]>>('/genders?only_active=false', { headers: authHeaders() }),
+      apiFetch<BaseResponse<PrefixItem[]>>('/prefixes?only_active=false', { headers: authHeaders() }),
+      apiFetch<BaseResponse<TeacherApiItem[]>>('/teachers?only_active=false', { headers: authHeaders() }),
+      apiFetch<BaseResponse<ClassroomItem[]>>(`/classrooms${classroomQuery}`, { headers: authHeaders() }),
+    ])
+
+    genderRows.value = Array.isArray(gendersRes.data) ? gendersRes.data : []
+    prefixRows.value = Array.isArray(prefixesRes.data) ? prefixesRes.data : []
+    teacherRows.value = Array.isArray(teachersRes.data) ? teachersRes.data : []
+    classroomRows.value = Array.isArray(classroomsRes.data) ? classroomsRes.data : []
+
+    const students = Array.isArray(studentsRes.data) ? studentsRes.data : []
+    rows.value = students.map(mapStudentRow)
+  }
+  catch {
+    errorMessage.value = 'ไม่สามารถโหลดข้อมูลนักเรียนได้'
+    rows.value = []
+  }
+  finally {
+    pageLoading.value = false
+  }
+}
+
+if (import.meta.client) {
+  loadRows()
+}
+
 const showModal = ref(false)
+const showConfirm = ref(false)
 const editTarget = ref<StudentRow | null>(null)
-const emptyForm = (): StudentRow => ({
-  id: '', name: '', class: '', advisor: '', gpa: '0.00', discipline: 100, status: 'ปกติ',
-  idCard: '', birthdate: '', phone: '', address: '',
-  parentName: '', parentPhone: '', parentRelation: '',
-})
-const form = ref<StudentRow>(emptyForm())
-const formErrors = ref({ id: '', name: '' })
+const deleteTarget = ref<StudentRow | null>(null)
 
-const openAdd = () => {
+const emptyForm = (): StudentForm => ({
+  studentId: '',
+  memberId: '',
+  genderId: '',
+  prefixId: '',
+  advisorTeacherId: '',
+  currentClassroomId: '',
+  firstName: '',
+  lastName: '',
+  code: '',
+  defaultStudentNo: null,
+  citizenId: '',
+  phone: '',
+  status: 'ปกติ',
+  email: '',
+  password: '',
+})
+
+const form = ref<StudentForm>(emptyForm())
+const formErrors = ref({ firstName: '', lastName: '', email: '', password: '' })
+
+function openAdd() {
   editTarget.value = null
-  form.value = { ...emptyForm(), id: generateId() }
-  formErrors.value = { id: '', name: '' }
+  form.value = emptyForm()
+  formErrors.value = { firstName: '', lastName: '', email: '', password: '' }
   showModal.value = true
 }
 
-const openEdit = (row: StudentRow) => {
+function openEdit(row: StudentRow) {
   editTarget.value = row
-  form.value = { ...row }
-  formErrors.value = { id: '', name: '' }
+  form.value = {
+    studentId: row.studentId,
+    memberId: row.memberId,
+    genderId: row.genderId,
+    prefixId: row.prefixId,
+    advisorTeacherId: row.advisorTeacherId,
+    currentClassroomId: row.currentClassroomId,
+    firstName: row.firstName,
+    lastName: row.lastName,
+    code: row.code,
+    defaultStudentNo: row.defaultStudentNo,
+    citizenId: row.citizenId,
+    phone: row.phone,
+    status: row.status,
+    email: '',
+    password: '',
+  }
+  formErrors.value = { firstName: '', lastName: '', email: '', password: '' }
   showModal.value = true
 }
 
 function validate() {
-  formErrors.value = { id: '', name: '' }
-  if (!form.value.id.trim()) formErrors.value.id = 'กรุณาระบุเลขประจำตัว'
-  if (!form.value.name.trim()) formErrors.value.name = 'กรุณาระบุชื่อ-นามสกุล'
-  return !formErrors.value.id && !formErrors.value.name
-}
+  formErrors.value = { firstName: '', lastName: '', email: '', password: '' }
 
-const saveRow = () => {
-  if (!validate()) return
-  if (editTarget.value) {
-    const idx = rows.value.indexOf(editTarget.value)
-    if (idx >= 0) rows.value[idx] = { ...form.value }
-  } else {
-    rows.value.push({ ...form.value })
+  if (!form.value.firstName.trim()) formErrors.value.firstName = 'กรุณาระบุชื่อ'
+  if (!form.value.lastName.trim()) formErrors.value.lastName = 'กรุณาระบุนามสกุล'
+
+  if (!editTarget.value) {
+    if (!form.value.email.trim()) formErrors.value.email = 'กรุณาระบุอีเมล'
+    if (form.value.password.trim().length < 6) formErrors.value.password = 'รหัสผ่านต้องอย่างน้อย 6 ตัวอักษร'
   }
-  showModal.value = false
+
+  return !formErrors.value.firstName && !formErrors.value.lastName && !formErrors.value.email && !formErrors.value.password
 }
 
-// ── Detail ──
+async function saveRow() {
+  if (!validate() || !authToken.value) return
+
+  try {
+    if (editTarget.value) {
+      await apiFetch(`/students/${editTarget.value.studentId}`, {
+        method: 'PATCH',
+        headers: authHeaders(),
+        body: {
+          member_id: form.value.memberId,
+          gender_id: form.value.genderId || null,
+          prefix_id: form.value.prefixId || null,
+          advisor_teacher_id: form.value.advisorTeacherId || null,
+          current_classroom_id: form.value.currentClassroomId || null,
+          student_code: form.value.code.trim() || null,
+          default_student_no: form.value.defaultStudentNo || null,
+          first_name: form.value.firstName.trim() || null,
+          last_name: form.value.lastName.trim() || null,
+          citizen_id: form.value.citizenId.trim() || null,
+          phone: form.value.phone.trim() || null,
+          is_active: toIsActive(form.value.status),
+        },
+      })
+    }
+    else {
+      const schoolId = profile.value.schoolId
+      if (!schoolId) {
+        errorMessage.value = 'ไม่พบ school_id ใน session'
+        return
+      }
+
+      await apiFetch('/onboarding/students/register', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: {
+          school_id: schoolId,
+          email: form.value.email.trim(),
+          password: form.value.password.trim(),
+          gender_id: form.value.genderId || null,
+          prefix_id: form.value.prefixId || null,
+          advisor_teacher_id: form.value.advisorTeacherId || null,
+          current_classroom_id: form.value.currentClassroomId || null,
+          student_code: form.value.code.trim() || null,
+          default_student_no: form.value.defaultStudentNo || null,
+          first_name: form.value.firstName.trim() || null,
+          last_name: form.value.lastName.trim() || null,
+          citizen_id: form.value.citizenId.trim() || null,
+          phone: form.value.phone.trim() || null,
+          is_active: toIsActive(form.value.status),
+        },
+      })
+    }
+
+    showModal.value = false
+    await loadRows()
+  }
+  catch {
+    errorMessage.value = 'บันทึกข้อมูลนักเรียนไม่สำเร็จ'
+  }
+}
+
 function openDetail(row: StudentRow) {
-  navigateTo(`/admin/students/${encodeURIComponent(row.id)}`)
+  navigateTo(`/admin/students/${encodeURIComponent(row.studentId)}`)
 }
 
-// ── Delete ──
-const showConfirm = ref(false)
-const deleteTarget = ref<StudentRow | null>(null)
+function openDelete(row: StudentRow) {
+  deleteTarget.value = row
+  showConfirm.value = true
+}
 
-const openDelete = (row: StudentRow) => { deleteTarget.value = row; showConfirm.value = true }
-const confirmDelete = () => {
-  if (deleteTarget.value) rows.value = rows.value.filter(r => r !== deleteTarget.value)
-  showConfirm.value = false
-  deleteTarget.value = null
+async function confirmDelete() {
+  if (!deleteTarget.value || !authToken.value) {
+    showConfirm.value = false
+    return
+  }
+
+  try {
+    await apiFetch(`/students/${deleteTarget.value.studentId}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    })
+
+    showConfirm.value = false
+    deleteTarget.value = null
+    await loadRows()
+  }
+  catch {
+    errorMessage.value = 'ลบข้อมูลนักเรียนไม่สำเร็จ'
+    showConfirm.value = false
+  }
 }
 </script>
 
@@ -249,34 +578,36 @@ const confirmDelete = () => {
 .page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .page-title { font-size: 1.2rem; font-weight: 700; margin: 0; color: #111827; }
 .page-desc { color: #6b7280; margin-top: 4px; font-size: 0.85rem; }
-.header-actions { display: flex; gap: 8px; }
+.inline-loading { margin-top: 6px; color: #1d4ed8; font-size: 0.82rem; }
+.inline-error { margin-top: 6px; color: #dc2626; font-size: 0.82rem; }
+
 .filter-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .search-wrap { position: relative; }
 .search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); pointer-events: none; }
 .input { border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 12px; font-size: 0.875rem; font-family: inherit; background: #fff; color: #111827; outline: none; transition: border-color 0.12s; }
 .input:focus { border-color: #6366f1; }
-.search { width: 280px; padding-left: 32px; }
+.search { width: 260px; padding-left: 32px; }
 .sel { cursor: pointer; }
+
 .btn { display: inline-flex; align-items: center; gap: 6px; border-radius: 8px; padding: 8px 14px; font-size: 0.875rem; font-weight: 500; border: 1px solid transparent; background: #fff; color: #111827; cursor: pointer; font-family: inherit; transition: background 0.12s; }
 .btn-primary { background: #111827; color: #fff; border-color: #111827; }
 .btn-primary:hover { background: #1f2937; }
-.btn-outline { border-color: #e5e7eb; }
-.btn-outline:hover { background: #f9fafb; }
-.btn-clear { border: 1px solid #e5e7eb; background: #fff; color: #6b7280; font-size: 0.8rem; padding: 7px 12px; white-space: nowrap; font-family: inherit; cursor: pointer; border-radius: 8px; font-weight: 500; }
-.btn-clear:hover { background: #f9fafb; color: #374151; }
-.action-btns { display: flex; gap: 6px; justify-content: flex-end; }
+
+.action-btns { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: nowrap; }
 .btn-sm { padding: 5px 10px; font-size: 0.8rem; }
-.btn-detail { border-color: #e5e7eb; background: #fff; color: #374151; }
-.btn-detail:hover { background: #f9fafb; }
 .btn-edit { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
 .btn-edit:hover { background: #dbeafe; border-color: #93c5fd; }
-.btn-danger { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
-.btn-danger:hover { background: #fee2e2; }
+.btn-detail { border-color: #e5e7eb; background: #fff; color: #374151; }
+.btn-detail:hover { background: #f9fafb; }
+.btn-delete { border-color: #fecaca; background: #fff5f5; color: #dc2626; }
+.btn-delete:hover { background: #fee2e2; }
+.btn-clear { border: 1px solid #e5e7eb; background: #fff; color: #6b7280; font-size: 0.8rem; padding: 7px 12px; white-space: nowrap; font-family: inherit; cursor: pointer; border-radius: 8px; font-weight: 500; }
+.btn-clear:hover { background: #f9fafb; color: #374151; }
+
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .field { display: flex; flex-direction: column; gap: 5px; font-size: 0.83rem; font-weight: 500; color: #374151; }
-.field--full { grid-column: 1 / -1; }
 .req { color: #ef4444; }
-.field-error { font-size: 0.75rem; color: #ef4444; }
+.field-error { font-size: 0.75rem; color: #ef4444; margin-top: 2px; }
 .id-display { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; }
 .id-badge { font-size: 0.875rem; font-weight: 600; color: #374151; font-family: monospace; letter-spacing: 0.05em; }
 .id-hint { font-size: 0.75rem; color: #9ca3af; }

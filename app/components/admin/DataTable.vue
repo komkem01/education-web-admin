@@ -9,12 +9,7 @@
         <slot name="actions" />
         <div v-if="rows.length > 0" class="page-size-wrap">
           <span class="page-size-label">แสดง</span>
-          <select v-model="localPageSize" class="page-size-sel" @change="currentPage = 1">
-            <option :value="10">10</option>
-            <option :value="20">20</option>
-            <option :value="50">50</option>
-            <option :value="100">100</option>
-          </select>
+          <AdminSearchSelect v-model="localPageSize" :options="pageSizeOptions" :searchable="false" size="sm" class="page-size-sel" />
           <span class="page-size-label">รายการ/หน้า</span>
         </div>
       </div>
@@ -101,9 +96,16 @@ const props = defineProps<{
 
 const localPageSize = ref(props.pageSize ?? 10)
 const currentPage = ref(1)
+const pageSizeOptions = [
+  { label: '10', value: 10 },
+  { label: '20', value: 20 },
+  { label: '50', value: 50 },
+  { label: '100', value: 100 },
+]
 
 // Reset to page 1 whenever rows change (e.g. after filtering)
 watch(() => props.rows, () => { currentPage.value = 1 })
+watch(localPageSize, () => { currentPage.value = 1 })
 
 const totalPages = computed(() => Math.max(1, Math.ceil(props.rows.length / localPageSize.value)))
 
@@ -245,17 +247,26 @@ tr:last-child td {
   white-space: nowrap;
 }
 .page-size-sel {
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  padding: 4px 6px;
-  font-size: 0.78rem;
-  font-family: inherit;
-  background: #fff;
-  color: #374151;
-  cursor: pointer;
-  outline: none;
+  width: 74px;
 }
-.page-size-sel:focus { border-color: #6366f1; }
+
+.page-size-sel:deep(.search-select__control) {
+  border-color: #dfe3e8;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.page-size-sel:deep(.search-select__input) {
+  text-align: center;
+  color: #111827;
+}
+
+.page-size-sel:deep(.search-select__dropdown) {
+  min-width: 74px;
+}
+
+.page-size-sel:deep(.search-select__option) {
+  text-align: center;
+}
 
 /* Pagination footer */
 .pagination {

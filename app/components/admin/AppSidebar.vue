@@ -19,7 +19,7 @@
     <Transition name="fade">
       <div v-if="!collapsed" class="school-tag">
         <span class="online-dot" />
-        <span class="school-name">โรงเรียนตัวอย่างวิทยา</span>
+        <span class="school-name">{{ schoolDisplay }}</span>
       </div>
     </Transition>
 
@@ -81,11 +81,11 @@
     <!-- Footer user -->
     <div class="sidebar-footer">
       <div class="user-row">
-        <div class="avatar">ส</div>
+        <div class="avatar">{{ avatarText }}</div>
         <Transition name="fade">
           <div v-if="!collapsed" class="user-info">
-            <span class="user-name">สมชาย มั่นคง</span>
-            <span class="user-role">Super Admin</span>
+            <span class="user-name">{{ displayName }}</span>
+            <span class="user-role">{{ displayRole }}</span>
           </div>
         </Transition>
       </div>
@@ -101,6 +101,7 @@ defineProps<{ collapsed: boolean }>()
 defineEmits<{ (e: 'toggle'): void }>()
 
 const route = useRoute()
+const { avatarText, displayName, displayRole, schoolDisplay } = useAdminAuth()
 
 const ICON_DASHBOARD = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor" fill-opacity=".8"/><rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor" fill-opacity=".8"/><rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor" fill-opacity=".8"/><rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" fill-opacity=".8"/></svg>`
 const ICON_SCHOOL = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 7.5L8 3l6 4.5V14H2V7.5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" fill="none"/><rect x="5.5" y="10" width="5" height="4" rx="0.5" stroke="currentColor" stroke-width="1.4" fill="none"/></svg>`

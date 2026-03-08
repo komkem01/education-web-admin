@@ -6,6 +6,8 @@
         <div>
           <h2 class="page-title">จัดการข้อมูลโรงเรียน</h2>
           <p class="page-desc">ข้อมูลพื้นฐาน, ปีการศึกษา, โครงสร้างหลักสูตร และเอกสาร ปพ.</p>
+           <p v-if="schoolLoading" class="page-loading">กำลังโหลดข้อมูลโรงเรียน...</p>
+          <p v-if="schoolError" class="page-error">{{ schoolError }}</p>
         </div>
       </div>
 
@@ -33,52 +35,20 @@
             <input v-model="schoolForm.name" class="input" :class="{ 'input--disabled': !editingSchool }" :disabled="!editingSchool" type="text" />
           </div>
           <div class="form-group">
-            <label class="field-label">รหัสโรงเรียน (สพฐ.)</label>
-            <div class="search-select-wrap">
-              <input
-                v-model="schoolForm.code"
-                class="input"
-                :class="{ 'input--disabled': !editingSchool }"
-                :disabled="!editingSchool"
-                list="school-code-list"
-                placeholder="พิมพ์หรือเลือกรหัสโรงเรียน"
-                autocomplete="off"
-              />
-              <datalist id="school-code-list">
-                <option v-for="c in schoolCodes" :key="c.value" :value="c.value">{{ c.label }}</option>
-              </datalist>
-            </div>
+            <label class="field-label">โลโก้โรงเรียน (URL)</label>
+            <input v-model="schoolForm.logoUrl" class="input" :class="{ 'input--disabled': !editingSchool }" :disabled="!editingSchool" type="url" placeholder="https://..." />
           </div>
           <div class="form-group">
-            <label class="field-label">สังกัด</label>
-            <div class="search-select-wrap">
-              <input
-                v-model="schoolForm.affiliation"
-                class="input"
-                :class="{ 'input--disabled': !editingSchool }"
-                :disabled="!editingSchool"
-                list="affiliation-list"
-                placeholder="พิมพ์หรือเลือกสังกัด"
-                autocomplete="off"
-              />
-              <datalist id="affiliation-list">
-                <option value="สพม. กรุงเทพมหานคร เขต 1" />
-                <option value="สพม. กรุงเทพมหานคร เขต 2" />
-                <option value="สพป. กรุงเทพมหานคร" />
-                <option value="สพม. นนทบุรี" />
-                <option value="สพป. นนทบุรี เขต 1" />
-                <option value="สพม. ปทุมธานี" />
-                <option value="สพม. เชียงใหม่" />
-                <option value="สพป. เชียงใหม่ เขต 1" />
-                <option value="สพม. ขอนแก่น" />
-                <option value="สพม. นครราชสีมา" />
-                <option value="อื่น ๆ" />
-              </datalist>
-            </div>
+            <label class="field-label">สีธีมโรงเรียน</label>
+            <input v-model="schoolForm.themeColor" class="input" :class="{ 'input--disabled': !editingSchool }" :disabled="!editingSchool" type="text" placeholder="#1d4ed8" />
           </div>
           <div class="form-group">
             <label class="field-label">ที่อยู่</label>
             <textarea v-model="schoolForm.address" class="input textarea" :class="{ 'input--disabled': !editingSchool }" :disabled="!editingSchool" rows="3" />
+          </div>
+          <div class="form-group">
+            <label class="field-label">รายละเอียด</label>
+            <textarea v-model="schoolForm.description" class="input textarea" :class="{ 'input--disabled': !editingSchool }" :disabled="!editingSchool" rows="2" />
           </div>
         </div>
 
@@ -100,6 +70,9 @@
             </div>
           </div>
 
+          <p v-if="yearLoading" class="inline-loading">กำลังโหลดปีการศึกษา...</p>
+          <p v-if="yearError" class="inline-error">{{ yearError }}</p>
+
           <div class="form-group">
             <label class="field-label">ปีการศึกษา</label>
             <div class="search-select-wrap">
@@ -113,11 +86,7 @@
                 autocomplete="off"
               />
               <datalist id="academic-year-list">
-                <option value="2568" />
-                <option value="2567" />
-                <option value="2566" />
-                <option value="2565" />
-                <option value="2564" />
+                <option v-for="item in academicYearOptions" :key="item" :value="item" />
               </datalist>
             </div>
           </div>
@@ -134,18 +103,41 @@
                 autocomplete="off"
               />
               <datalist id="semester-list">
-                <option value="1" />
-                <option value="2" />
+                <option v-for="item in semesterOptions" :key="item" :value="item" />
               </datalist>
             </div>
           </div>
           <div class="form-group">
             <label class="field-label">วันเปิดเรียน</label>
-            <input v-model="yearForm.start" class="input" :class="{ 'input--disabled': !editingYear }" :disabled="!editingYear" type="date" />
+            <input
+              v-if="editingYear"
+              v-model="yearForm.start"
+              class="input"
+              type="date"
+            />
+            <input
+              v-else
+              :value="formatDateThaiDisplay(yearForm.start)"
+              class="input input--disabled"
+              disabled
+              type="text"
+            />
           </div>
           <div class="form-group">
             <label class="field-label">วันปิดเรียน</label>
-            <input v-model="yearForm.end" class="input" :class="{ 'input--disabled': !editingYear }" :disabled="!editingYear" type="date" />
+            <input
+              v-if="editingYear"
+              v-model="yearForm.end"
+              class="input"
+              type="date"
+            />
+            <input
+              v-else
+              :value="formatDateThaiDisplay(yearForm.end)"
+              class="input input--disabled"
+              disabled
+              type="text"
+            />
           </div>
         </div>
       </div>
@@ -154,53 +146,12 @@
       <div class="card full-card">
         <div class="card-header-row">
           <h3 class="card-title">โครงสร้างหลักสูตร</h3>
-          <button type="button" class="btn btn-outline" @click="openAddCurriculum">+ เพิ่มกลุ่มสาระ</button>
+          <button type="button" class="btn btn-outline" @click="refreshCurriculum">รีเฟรช</button>
         </div>
-        <AdminDataTable :columns="curriculumCols" :rows="curriculumRows">
-          <template #rowActions="{ row }">
-            <div class="action-btns">
-              <button type="button" class="btn-tiny" @click="openEditCurriculum(row as unknown as CurriculumRow)">แก้ไข</button>
-              <button type="button" class="btn-tiny btn-red" @click="openDeleteCurriculum(row as unknown as CurriculumRow)">ลบ</button>
-            </div>
-          </template>
-        </AdminDataTable>
+        <p v-if="curriculumLoading" class="inline-loading">กำลังโหลดโครงสร้างหลักสูตร...</p>
+        <p v-if="curriculumError" class="inline-error">{{ curriculumError }}</p>
+        <AdminDataTable :columns="curriculumCols" :rows="curriculumRows" />
       </div>
-
-      <!-- Curriculum Add/Edit Modal -->
-      <AdminAppModal
-        v-model="showCurriculumModal"
-        :title="editingCurriculum ? 'แก้ไขกลุ่มสาระ' : 'เพิ่มกลุ่มสาระ'"
-        size="sm"
-        confirm-label="บันทึก"
-        @confirm="saveCurriculum"
-      >
-        <div class="form-grid">
-          <div class="form-group form-group--full">
-            <label class="field-label">ชื่อกลุ่มสาระ <span class="req">*</span></label>
-            <input v-model="curriculumForm.group" class="input" placeholder="เช่น ภาษาไทย" />
-          </div>
-          <div class="form-group">
-            <label class="field-label">จำนวนวิชา</label>
-            <input v-model.number="curriculumForm.subjects" class="input" type="number" min="0" placeholder="0" />
-          </div>
-          <div class="form-group">
-            <label class="field-label">ชั่วโมง/สัปดาห์</label>
-            <input v-model.number="curriculumForm.hours" class="input" type="number" min="0" placeholder="0" />
-          </div>
-          <div class="form-group">
-            <label class="field-label">หน่วยกิต/ปี</label>
-            <input v-model.number="curriculumForm.credit" class="input" type="number" min="0" placeholder="0" />
-          </div>
-        </div>
-      </AdminAppModal>
-
-      <!-- Curriculum Delete Confirm -->
-      <AdminAppConfirmModal
-        v-model="showCurriculumConfirm"
-        :title="`ลบกลุ่มสาระ '${deleteCurriculumTarget?.group}'?`"
-        description="ข้อมูลกลุ่มสาระนี้จะถูกลบออกจากโครงสร้างหลักสูตร"
-        @confirm="confirmDeleteCurriculum"
-      />
 
       <!-- ── Document exports ── -->
       <div class="card full-card">
@@ -222,24 +173,117 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { computed, ref, reactive, watch } from 'vue'
 
 definePageMeta({ layout: 'admin' })
 
 const { loading } = usePageLoad()
+const config = useRuntimeConfig()
+const authToken = useCookie<string | null>('edu_auth_token')
+const { profile, fetchSchoolProfileById } = useAdminAuth()
 
-// ── School codes list ──
-const schoolCodes = [
-  { value: '1001010101', label: '1001010101 — โรงเรียนตัวอย่างวิทยา' },
-  { value: '1001010102', label: '1001010102 — โรงเรียนสาธิต กทม.' },
-  { value: '1002010201', label: '1002010201 — โรงเรียนนนทบุรีวิทยา' },
-  { value: '1003010301', label: '1003010301 — โรงเรียนปทุมวิทยา' },
-]
+type SchoolModel = {
+  id: string
+  name: string
+  logo_url: string | null
+  theme_color: string | null
+  address: string
+  description: string | null
+}
+
+type SchoolResponse = {
+  data: SchoolModel
+}
+
+type AcademicYearModel = {
+  id: string
+  year: string
+  term: string
+  is_current: boolean
+  is_active: boolean
+  start_date: string
+  end_date: string
+}
+
+type AcademicYearResponse = {
+  data: AcademicYearModel[]
+}
+
+type SubjectModel = {
+  id: string
+  school_id: string
+  category: string | null
+  credits: number | null
+}
+
+type SubjectResponse = {
+  data: SubjectModel[]
+}
+
+const schoolError = ref('')
+const schoolLoading = ref(false)
+const yearError = ref('')
+const yearLoading = ref(false)
+const curriculumError = ref('')
+const curriculumLoading = ref(false)
 
 // ── School form ──
 const editingSchool = ref(false)
-const schoolForm = reactive({ name: 'โรงเรียนตัวอย่างวิทยา', code: '1001010101', affiliation: 'สพม. กรุงเทพมหานคร เขต 1', address: '123 ถนนวัฒนา แขวงท่าพระ เขตบางกอกใหญ่ กรุงเทพฯ 10160' })
+const schoolForm = reactive({ name: '', logoUrl: '', themeColor: '', address: '', description: '' })
 let schoolSnapshot = { ...schoolForm }
+
+function authHeaders() {
+  return { Authorization: `Bearer ${authToken.value}` }
+}
+
+function bindSchoolForm(school: SchoolModel) {
+  schoolForm.name = school.name || ''
+  schoolForm.logoUrl = school.logo_url || ''
+  schoolForm.themeColor = school.theme_color || ''
+  schoolForm.address = school.address || ''
+  schoolForm.description = school.description || ''
+}
+
+async function loadSchool() {
+  if (!import.meta.client) return
+
+  const schoolId = profile.value.schoolId
+  if (!schoolId || !authToken.value) return
+
+  schoolLoading.value = true
+  schoolError.value = ''
+
+  try {
+    const res = await $fetch<SchoolResponse>(`${config.public.apiBase}/back-office/schools/${schoolId}`, {
+      headers: authHeaders(),
+    })
+    bindSchoolForm(res.data)
+    schoolSnapshot = { ...schoolForm }
+    await fetchSchoolProfileById(schoolId)
+  }
+  catch {
+    try {
+      const res = await $fetch<SchoolResponse>(`${config.public.apiBase}/schools/${schoolId}`, {
+        headers: authHeaders(),
+      })
+      bindSchoolForm(res.data)
+      schoolSnapshot = { ...schoolForm }
+      await fetchSchoolProfileById(schoolId)
+    }
+    catch {
+      schoolError.value = 'ไม่สามารถโหลดข้อมูลโรงเรียนจากระบบได้'
+    }
+  }
+  finally {
+    schoolLoading.value = false
+  }
+}
+
+watch(() => profile.value.schoolId, () => {
+  loadSchool()
+  loadAcademicYears()
+  loadCurriculum()
+}, { immediate: true })
 
 function startEditSchool() {
   schoolSnapshot = { ...schoolForm }
@@ -250,13 +294,137 @@ function cancelEditSchool() {
   editingSchool.value = false
 }
 function saveSchool() {
-  editingSchool.value = false
+  const schoolId = profile.value.schoolId
+  if (!schoolId) {
+    schoolError.value = 'ไม่พบ school_id ใน session'
+    return
+  }
+
+  schoolError.value = ''
+
+  $fetch<SchoolResponse>(`${config.public.apiBase}/back-office/schools/${schoolId}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: {
+      name: schoolForm.name.trim(),
+      logo_url: schoolForm.logoUrl.trim() || null,
+      theme_color: schoolForm.themeColor.trim() || null,
+      address: schoolForm.address.trim(),
+      description: schoolForm.description.trim() || null,
+    },
+  }).then(async (res) => {
+    bindSchoolForm(res.data)
+    schoolSnapshot = { ...schoolForm }
+    editingSchool.value = false
+    await fetchSchoolProfileById(schoolId)
+  }).catch(async () => {
+    // fallback route for non-back-office mounts
+    try {
+      const res = await $fetch<SchoolResponse>(`${config.public.apiBase}/schools/${schoolId}`, {
+        method: 'PATCH',
+        headers: authHeaders(),
+        body: {
+          name: schoolForm.name.trim(),
+          logo_url: schoolForm.logoUrl.trim() || null,
+          theme_color: schoolForm.themeColor.trim() || null,
+          address: schoolForm.address.trim(),
+          description: schoolForm.description.trim() || null,
+        },
+      })
+      bindSchoolForm(res.data)
+      schoolSnapshot = { ...schoolForm }
+      editingSchool.value = false
+      await fetchSchoolProfileById(schoolId)
+    }
+    catch {
+      schoolError.value = 'บันทึกข้อมูลโรงเรียนไม่สำเร็จ'
+    }
+  })
 }
 
 // ── Year form ──
 const editingYear = ref(false)
-const yearForm = reactive({ year: '2568', semester: '1', start: '2025-05-12', end: '2025-10-03' })
+const yearForm = reactive({ year: '', semester: '', start: '', end: '' })
 let yearSnapshot = { ...yearForm }
+const academicYears = ref<AcademicYearModel[]>([])
+const currentAcademicYearId = ref('')
+
+const academicYearOptions = computed(() => {
+  const values = new Set(academicYears.value.map(item => item.year).filter(Boolean))
+  return Array.from(values).sort((a, b) => Number(b) - Number(a))
+})
+
+const semesterOptions = computed(() => {
+  const values = new Set(
+    academicYears.value
+      .filter(item => !yearForm.year || item.year === yearForm.year)
+      .map(item => item.term)
+      .filter(Boolean),
+  )
+  return Array.from(values).sort((a, b) => Number(a) - Number(b))
+})
+
+function bindAcademicYearForm(item: AcademicYearModel) {
+  currentAcademicYearId.value = item.id
+  yearForm.year = item.year
+  yearForm.semester = item.term
+  yearForm.start = item.start_date
+  yearForm.end = item.end_date
+}
+
+function formatDateThaiDisplay(isoDate: string) {
+  if (!isoDate) return '-'
+  const [year, month, day] = isoDate.split('-')
+  if (!year || !month || !day) return isoDate
+  const buddhistYear = Number(year) + 543
+  const dd = day.padStart(2, '0')
+  const mm = month.padStart(2, '0')
+  return `${dd}/${mm}/${buddhistYear}`
+}
+
+async function loadAcademicYears() {
+  if (!import.meta.client || !authToken.value) return
+
+  yearLoading.value = true
+  yearError.value = ''
+
+  try {
+    const res = await $fetch<AcademicYearResponse>(`${config.public.apiBase}/back-office/academic-years`, {
+      headers: authHeaders(),
+    })
+
+    academicYears.value = res.data || []
+  }
+  catch {
+    try {
+      const res = await $fetch<AcademicYearResponse>(`${config.public.apiBase}/academic-years`, {
+        headers: authHeaders(),
+      })
+      academicYears.value = res.data || []
+    }
+    catch {
+      yearError.value = 'ไม่สามารถโหลดข้อมูลปีการศึกษาได้'
+      academicYears.value = []
+    }
+  }
+  finally {
+    const current = academicYears.value.find(item => item.is_current) || academicYears.value[0]
+    if (current) {
+      bindAcademicYearForm(current)
+      yearSnapshot = { ...yearForm }
+    }
+    yearLoading.value = false
+  }
+}
+
+watch(() => [yearForm.year, yearForm.semester], () => {
+  if (!editingYear.value) return
+  const match = academicYears.value.find(item => item.year === yearForm.year && item.term === yearForm.semester)
+  if (!match) return
+  currentAcademicYearId.value = match.id
+  yearForm.start = match.start_date
+  yearForm.end = match.end_date
+})
 
 function startEditYear() {
   yearSnapshot = { ...yearForm }
@@ -266,7 +434,68 @@ function cancelEditYear() {
   Object.assign(yearForm, yearSnapshot)
   editingYear.value = false
 }
-function saveYear() {
+async function saveYear() {
+  if (!authToken.value) return
+
+  yearError.value = ''
+
+  const payload = {
+    year: yearForm.year.trim(),
+    term: yearForm.semester.trim(),
+    is_current: true,
+    is_active: true,
+    start_date: yearForm.start,
+    end_date: yearForm.end,
+  }
+
+  if (!payload.year || !payload.term || !payload.start_date || !payload.end_date) {
+    yearError.value = 'กรุณากรอกข้อมูลปีการศึกษาให้ครบ'
+    return
+  }
+
+  const matched = academicYears.value.find(item => item.year === payload.year && item.term === payload.term)
+  const targetId = matched?.id || ''
+
+  try {
+    if (targetId) {
+      await $fetch(`${config.public.apiBase}/back-office/academic-years/${targetId}`, {
+        method: 'PATCH',
+        headers: authHeaders(),
+        body: payload,
+      })
+    }
+    else {
+      await $fetch(`${config.public.apiBase}/back-office/academic-years`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: payload,
+      })
+    }
+  }
+  catch {
+    try {
+      if (targetId) {
+        await $fetch(`${config.public.apiBase}/academic-years/${targetId}`, {
+          method: 'PATCH',
+          headers: authHeaders(),
+          body: payload,
+        })
+      }
+      else {
+        await $fetch(`${config.public.apiBase}/academic-years`, {
+          method: 'POST',
+          headers: authHeaders(),
+          body: payload,
+        })
+      }
+    }
+    catch {
+      yearError.value = 'บันทึกปีการศึกษาไม่สำเร็จ'
+      return
+    }
+  }
+
+  await loadAcademicYears()
   editingYear.value = false
 }
 
@@ -280,59 +509,67 @@ const curriculumCols = [
 
 interface CurriculumRow { group: string; subjects: number; hours: number; credit: number }
 
-const curriculumRows = ref<CurriculumRow[]>([
-  { group: 'ภาษาไทย', subjects: 8, hours: 5, credit: 6 },
-  { group: 'คณิตศาสตร์', subjects: 6, hours: 5, credit: 6 },
-  { group: 'วิทยาศาสตร์', subjects: 10, hours: 6, credit: 8 },
-  { group: 'สังคมศึกษา', subjects: 8, hours: 4, credit: 5 },
-  { group: 'ภาษาต่างประเทศ', subjects: 9, hours: 5, credit: 6 },
-])
+const curriculumRows = ref<CurriculumRow[]>([])
 
-const showCurriculumModal = ref(false)
-const editingCurriculum = ref(false)
-let curriculumEditTarget: CurriculumRow | null = null
-const emptyCurriculumForm = (): CurriculumRow => ({ group: '', subjects: 0, hours: 0, credit: 0 })
-const curriculumForm = ref<CurriculumRow>(emptyCurriculumForm())
-
-function openAddCurriculum() {
-  editingCurriculum.value = false
-  curriculumEditTarget = null
-  curriculumForm.value = emptyCurriculumForm()
-  showCurriculumModal.value = true
+function normalizeGroupName(value: string | null | undefined) {
+  const text = (value || '').trim()
+  return text || 'ไม่ระบุกลุ่มสาระ'
 }
 
-function openEditCurriculum(row: CurriculumRow) {
-  editingCurriculum.value = true
-  curriculumEditTarget = row
-  curriculumForm.value = { ...row }
-  showCurriculumModal.value = true
-}
-
-function saveCurriculum() {
-  if (!curriculumForm.value.group.trim()) return
-  if (editingCurriculum.value && curriculumEditTarget) {
-    const idx = curriculumRows.value.indexOf(curriculumEditTarget)
-    if (idx !== -1) curriculumRows.value[idx] = { ...curriculumForm.value }
+function toCurriculumRows(subjects: SubjectModel[]): CurriculumRow[] {
+  const grouped = new Map<string, { subjects: number; credit: number }>()
+  for (const item of subjects) {
+    const key = normalizeGroupName(item.category)
+    const current = grouped.get(key) || { subjects: 0, credit: 0 }
+    current.subjects += 1
+    current.credit += Number(item.credits || 0)
+    grouped.set(key, current)
   }
-  else {
-    curriculumRows.value.push({ ...curriculumForm.value })
+
+  return Array.from(grouped.entries())
+    .map(([group, stat]) => ({
+      group,
+      subjects: stat.subjects,
+      hours: 0,
+      credit: Number(stat.credit.toFixed(2)),
+    }))
+    .sort((a, b) => a.group.localeCompare(b.group, 'th'))
+}
+
+async function loadCurriculum() {
+  if (!import.meta.client || !authToken.value) return
+
+  const schoolId = profile.value.schoolId
+  if (!schoolId) return
+
+  curriculumLoading.value = true
+  curriculumError.value = ''
+
+  try {
+    const res = await $fetch<SubjectResponse>(`${config.public.apiBase}/back-office/subjects?school_id=${schoolId}`, {
+      headers: authHeaders(),
+    })
+    curriculumRows.value = toCurriculumRows(res.data || [])
   }
-  showCurriculumModal.value = false
+  catch {
+    try {
+      const res = await $fetch<SubjectResponse>(`${config.public.apiBase}/subjects?school_id=${schoolId}`, {
+        headers: authHeaders(),
+      })
+      curriculumRows.value = toCurriculumRows(res.data || [])
+    }
+    catch {
+      curriculumError.value = 'ไม่สามารถโหลดโครงสร้างหลักสูตรได้'
+      curriculumRows.value = []
+    }
+  }
+  finally {
+    curriculumLoading.value = false
+  }
 }
 
-const showCurriculumConfirm = ref(false)
-let deleteCurriculumTarget: CurriculumRow | null = null as CurriculumRow | null
-
-function openDeleteCurriculum(row: CurriculumRow) {
-  deleteCurriculumTarget = row
-  showCurriculumConfirm.value = true
-}
-
-function confirmDeleteCurriculum() {
-  if (deleteCurriculumTarget)
-    curriculumRows.value = curriculumRows.value.filter(r => r !== deleteCurriculumTarget)
-  deleteCurriculumTarget = null
-  showCurriculumConfirm.value = false
+function refreshCurriculum() {
+  loadCurriculum()
 }
 
 const docs = [
@@ -367,6 +604,30 @@ const docs = [
   color: #6b7280;
   margin-top: 4px;
   font-size: 0.85rem;
+}
+
+.page-loading {
+  margin-top: 6px;
+  color: #1d4ed8;
+  font-size: 13px;
+}
+
+.page-error {
+  margin-top: 6px;
+  color: #dc2626;
+  font-size: 13px;
+}
+
+.inline-loading {
+  margin: 0;
+  color: #1d4ed8;
+  font-size: 0.82rem;
+}
+
+.inline-error {
+  margin: 0;
+  color: #dc2626;
+  font-size: 0.82rem;
 }
 
 .grid-2 {
@@ -508,6 +769,7 @@ const docs = [
   display: flex;
   gap: 6px;
   justify-content: flex-end;
+  flex-wrap: nowrap;
 }
 
 .btn-tiny {

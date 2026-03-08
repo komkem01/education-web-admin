@@ -9,18 +9,6 @@
       </div>
     </div>
 
-    <div class="api-session section-gap">
-      <div class="api-session-title">ข้อมูลผู้ใช้จาก API</div>
-      <p v-if="mePending" class="api-session-text">กำลังโหลดข้อมูล...</p>
-      <p v-else-if="meError" class="api-session-text api-session-error">ไม่สามารถดึงข้อมูลจาก /auth/me ได้</p>
-      <p v-else class="api-session-text">
-        member: <strong>{{ meData?.member_id }}</strong>
-        · role: <strong>{{ meData?.role }}</strong>
-        · school: <strong>{{ meData?.school_id }}</strong>
-        · หมดอายุ: <strong>{{ meData?.expires_at }}</strong>
-      </p>
-    </div>
-
     <!-- ── Metric Cards ── -->
     <div class="grid-4 section-gap">
       <AdminMetricCard icon="👥" label="บุคลากรทั้งหมด" :value="String(personnelRows.length)" :sub="`อยู่ในระบบ ${activePersonnelCount} คน`" :trend="4" accent="#6366f1" />
@@ -206,27 +194,11 @@ import { useGradesData, getGrade } from '~/composables/useGradesData'
 definePageMeta({ layout: 'admin' })
 
 const { loading } = usePageLoad()
-const config = useRuntimeConfig()
-const authToken = useCookie<string | null>('edu_auth_token')
-const authMemberId = useCookie<string | null>('edu_auth_member_id')
-const authRole = useCookie<string | null>('edu_auth_role')
+const { displayName, displayRole } = useAdminAuth()
 
-const { data: meResponse, pending: mePending, error: meError } = useAsyncData(
-  'admin-auth-me',
-  () => $fetch<{ data: { member_id: string; school_id: string; role: string; expires_at: string } }>(`${config.public.apiBase}/auth/me`, {
-    headers: {
-      Authorization: `Bearer ${authToken.value}`,
-    },
-  }),
-  { server: false },
-)
-
-const meData = computed(() => meResponse.value?.data)
 const headerIdentity = computed(() => {
-  const memberId = meData.value?.member_id || authMemberId.value
-  const role = (meData.value?.role || authRole.value || 'admin').toUpperCase()
-  if (!memberId) return role
-  return `${role} · ${memberId}`
+  if (!displayName.value) return displayRole.value
+  return `${displayRole.value} · ${displayName.value}`
 })
 
 const { rows: personnelRows } = usePersonnelsData()
