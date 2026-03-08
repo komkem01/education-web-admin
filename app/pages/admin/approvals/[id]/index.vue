@@ -8,31 +8,23 @@
       </div>
 
       <template v-else>
-        <!-- Header -->
         <div class="page-header">
           <div class="header-left">
-            <button class="btn btn-back" @click="navigateTo('/admin/approvals')">
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M7 2L3 6l4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              กลับ
-            </button>
+            <button class="btn btn-back" @click="navigateTo('/admin/approvals')">กลับ</button>
             <div>
-              <h2 class="page-title">{{ record.type }}</h2>
-              <p class="page-desc">คำขอ #{{ record.id }} · {{ record.date }}</p>
+              <h2 class="page-title">{{ requestTypeLabel }}</h2>
+              <p class="page-desc">คำขอ #{{ record.id }} · {{ dateText }}</p>
             </div>
           </div>
           <div class="header-actions">
-            <AdminStatusBadge
-              :label="record.status"
-              :variant="record.status === 'รออนุมัติ' ? 'pending' : record.status === 'อนุมัติแล้ว' ? 'approved' : 'rejected'"
-            />
-            <template v-if="record.status === 'รออนุมัติ'">
-              <button class="btn btn-approve" @click="showApproveConfirm = true">✓ อนุมัติ</button>
-              <button class="btn btn-reject" @click="showRejectModal = true">✕ ปฏิเสธ</button>
+            <AdminStatusBadge :label="statusText" :variant="statusText === 'รออนุมัติ' ? 'pending' : statusText === 'อนุมัติแล้ว' ? 'approved' : 'rejected'" />
+            <template v-if="statusText === 'รออนุมัติ'">
+              <button class="btn btn-edit" @click="showApproveConfirm = true">อนุมัติ</button>
+              <button class="btn btn-delete" @click="showRejectModal = true">ปฏิเสธ</button>
             </template>
           </div>
         </div>
 
-        <!-- Detail card -->
         <div class="detail-card">
           <p class="section-title">รายละเอียดคำขอ</p>
           <div class="detail-grid">
@@ -42,66 +34,55 @@
             </div>
             <div class="detail-item">
               <span class="detail-label">วันที่ยื่น</span>
-              <span class="detail-value">{{ record.date }}</span>
-            </div>
-            <div class="detail-item detail-item--full">
-              <span class="detail-label">ประเภทคำขอ</span>
-              <span class="detail-value">{{ record.type }}</span>
+              <span class="detail-value">{{ dateText }}</span>
             </div>
             <div class="detail-item">
               <span class="detail-label">ผู้ยื่นคำขอ</span>
-              <span class="detail-value">{{ record.requester }}</span>
+              <span class="detail-value">{{ record.requester_name }}</span>
             </div>
             <div class="detail-item">
               <span class="detail-label">บทบาท</span>
-              <span class="detail-value">{{ record.role }}</span>
+              <span class="detail-value">{{ roleLabel }}</span>
             </div>
             <div class="detail-item detail-item--full">
               <span class="detail-label">รายละเอียด</span>
-              <span class="detail-value">{{ record.detail }}</span>
+              <span class="detail-value">{{ record.detail || '-' }}</span>
             </div>
             <div class="detail-item detail-item--full">
               <span class="detail-label">สถานะ</span>
               <span class="detail-value">
-                <AdminStatusBadge
-                  :label="record.status"
-                  :variant="record.status === 'รออนุมัติ' ? 'pending' : record.status === 'อนุมัติแล้ว' ? 'approved' : 'rejected'"
-                />
+                <AdminStatusBadge :label="statusText" :variant="statusText === 'รออนุมัติ' ? 'pending' : statusText === 'อนุมัติแล้ว' ? 'approved' : 'rejected'" />
               </span>
             </div>
-            <div v-if="record.note" class="detail-item detail-item--full">
-              <span class="detail-label">เหตุผลการปฏิเสธ</span>
-              <span class="detail-value note-value">{{ record.note }}</span>
+            <div v-if="record.comment" class="detail-item detail-item--full">
+              <span class="detail-label">หมายเหตุผู้อนุมัติ</span>
+              <span class="detail-value note-value">{{ record.comment }}</span>
             </div>
           </div>
         </div>
 
-        <!-- Action strip (pending only) -->
-        <div v-if="record.status === 'รออนุมัติ'" class="action-strip">
-          <p class="action-strip-hint">คำขอนี้ยังรอการพิจารณา — กรุณาดำเนินการ</p>
+        <div v-if="statusText === 'รออนุมัติ'" class="action-strip">
+          <p class="action-strip-hint">คำขอนี้ยังรอการพิจารณา</p>
           <div class="action-strip-btns">
-            <button class="btn btn-approve btn-lg" @click="showApproveConfirm = true">✓ อนุมัติคำขอนี้</button>
-            <button class="btn btn-reject btn-lg" @click="showRejectModal = true">✕ ปฏิเสธคำขอนี้</button>
+            <button class="btn btn-edit" @click="showApproveConfirm = true">อนุมัติคำขอนี้</button>
+            <button class="btn btn-delete" @click="showRejectModal = true">ปฏิเสธคำขอนี้</button>
           </div>
         </div>
 
-        <!-- Done banner -->
-        <div v-else class="done-banner" :class="record.status === 'อนุมัติแล้ว' ? 'done-banner--approved' : 'done-banner--rejected'">
-          <span class="done-icon">{{ record.status === 'อนุมัติแล้ว' ? '✓' : '✕' }}</span>
-          <span>คำขอนี้ถูก<strong>{{ record.status }}</strong>แล้ว</span>
+        <div v-else class="done-banner" :class="statusText === 'อนุมัติแล้ว' ? 'done-banner--approved' : 'done-banner--rejected'">
+          <span class="done-icon">{{ statusText === 'อนุมัติแล้ว' ? '✓' : '✕' }}</span>
+          <span>คำขอนี้ถูก<strong>{{ statusText }}</strong>แล้ว</span>
         </div>
       </template>
 
-      <!-- Approve confirm modal -->
       <AdminAppConfirmModal
         v-model="showApproveConfirm"
         title="ยืนยันการอนุมัติ?"
-        :description="`ต้องการอนุมัติคำขอ '${record?.type}' ของ ${record?.requester} ใช่หรือไม่?`"
+        :description="`ต้องการอนุมัติคำขอของ ${record?.requester_name || '-'} ใช่หรือไม่?`"
         confirm-label="ยืนยันอนุมัติ"
         @confirm="approveRecord"
       />
 
-      <!-- Reject reason modal -->
       <AdminAppModal
         v-model="showRejectModal"
         title="ระบุเหตุผลการปฏิเสธ"
@@ -120,36 +101,125 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useApprovalsData } from '~/composables/useApprovalsData'
+import { computed, ref } from 'vue'
 
 definePageMeta({ layout: 'admin' })
 
-const { loading } = usePageLoad()
-const route = useRoute()
-const { rows } = useApprovalsData()
+type BaseResponse<T> = { data: T }
 
-const id = computed(() => decodeURIComponent(String(route.params.id ?? '')))
-const record = computed(() => rows.value.find(r => String(r.id) === id.value) ?? null)
-
-const showApproveConfirm = ref(false)
-
-function approveRecord() {
-  if (!record.value) return
-  const idx = rows.value.findIndex(r => r.id === record.value!.id)
-  if (idx !== -1) rows.value[idx] = { ...rows.value[idx], status: 'อนุมัติแล้ว', note: undefined }
+type ReportsApprovalApiItem = {
+  id: string
+  type: string
+  requester_name: string
+  requester_role: string
+  title: string
+  detail: string
+  status: 'pending' | 'approved' | 'rejected'
+  comment: string | null
+  created_at: string
 }
 
-// ── Reject with reason ──
+const { loading } = usePageLoad()
+const route = useRoute()
+const config = useRuntimeConfig()
+const authToken = useCookie<string | null>('edu_auth_token')
+
+const requestId = String(route.params.id ?? '')
+const requestType = String(route.query.type ?? '')
+
+const record = ref<ReportsApprovalApiItem | null>(null)
+
+function authHeaders() {
+  return { Authorization: `Bearer ${authToken.value}` }
+}
+
+async function apiFetch<T>(path: string, options?: Parameters<typeof $fetch<T>>[1]) {
+  try {
+    return await $fetch<T>(`${config.public.apiBase}/back-office${path}`, options)
+  }
+  catch {
+    return await $fetch<T>(`${config.public.apiBase}${path}`, options)
+  }
+}
+
+const dateText = computed(() => {
+  if (!record.value) return '-'
+  const dt = new Date(record.value.created_at)
+  if (Number.isNaN(dt.getTime())) return '-'
+  return dt.toLocaleDateString('th-TH')
+})
+
+const requestTypeLabel = computed(() => {
+  if (!record.value) return '-'
+  return record.value.title || record.value.type
+})
+
+const roleLabel = computed(() => {
+  const map: Record<string, string> = {
+    admin: 'แอดมิน',
+    staff: 'บุคลากร',
+    teacher: 'ครู',
+    student: 'นักเรียน',
+    parent: 'ผู้ปกครอง',
+  }
+  if (!record.value) return '-'
+  return map[record.value.requester_role] || record.value.requester_role
+})
+
+const statusText = computed(() => {
+  if (!record.value) return 'รออนุมัติ'
+  if (record.value.status === 'approved') return 'อนุมัติแล้ว'
+  if (record.value.status === 'rejected') return 'ปฏิเสธ'
+  return 'รออนุมัติ'
+})
+
+async function load() {
+  if (!import.meta.client || !authToken.value || !requestId || !requestType) return
+  try {
+    const res = await apiFetch<BaseResponse<ReportsApprovalApiItem>>(
+      `/reports/approvals/${encodeURIComponent(requestType)}/${encodeURIComponent(requestId)}`,
+      { headers: authHeaders() },
+    )
+    record.value = res.data || null
+  }
+  catch {
+    record.value = null
+  }
+}
+
+if (import.meta.client) {
+  load()
+}
+
+async function patchRecord(status: 'approved' | 'rejected', comment: string | null) {
+  if (!record.value) return
+  await apiFetch(`/reports/approvals/${encodeURIComponent(record.value.type)}/${encodeURIComponent(record.value.id)}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: {
+      status,
+      comment,
+    },
+  })
+  await load()
+}
+
+const showApproveConfirm = ref(false)
+async function approveRecord() {
+  await patchRecord('approved', null)
+  showApproveConfirm.value = false
+}
+
 const showRejectModal = ref(false)
 const rejectNote = ref('')
 const rejectNoteError = ref('')
 
-function confirmReject() {
-  if (!rejectNote.value.trim()) { rejectNoteError.value = 'กรุณาระบุเหตุผล'; return }
-  if (!record.value) return
-  const idx = rows.value.findIndex(r => r.id === record.value!.id)
-  if (idx !== -1) rows.value[idx] = { ...rows.value[idx], status: 'ปฏิเสธ', note: rejectNote.value.trim() }
+async function confirmReject() {
+  if (!rejectNote.value.trim()) {
+    rejectNoteError.value = 'กรุณาระบุเหตุผล'
+    return
+  }
+  await patchRecord('rejected', rejectNote.value.trim())
   showRejectModal.value = false
   rejectNote.value = ''
   rejectNoteError.value = ''
@@ -167,11 +237,10 @@ function confirmReject() {
 .btn:hover { background: #f9fafb; }
 .btn-back { color: #6b7280; padding: 7px 12px; font-size: 0.82rem; margin-top: 2px; }
 .btn-primary { background: #111827; color: #fff; border-color: #111827; }
-.btn-approve { border-color: #bbf7d0; background: #f0fdf4; color: #15803d; }
-.btn-approve:hover { background: #dcfce7; }
-.btn-reject { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
-.btn-reject:hover { background: #fee2e2; }
-.btn-lg { padding: 10px 20px; font-size: 0.9rem; }
+.btn-edit { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
+.btn-edit:hover { background: #dbeafe; }
+.btn-delete { border-color: #fecaca; background: #fff5f5; color: #dc2626; }
+.btn-delete:hover { background: #fee2e2; }
 .detail-card { background: #fff; border: 1px solid #e8eaed; border-radius: 14px; padding: 24px; }
 .section-title { font-size: 0.78rem; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 18px; padding-bottom: 10px; border-bottom: 1px solid #f3f4f6; }
 .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px 32px; }
@@ -181,6 +250,7 @@ function confirmReject() {
 .detail-value { font-size: 0.95rem; color: #111827; font-weight: 500; }
 .detail-value.mono { font-family: monospace; letter-spacing: 0.04em; }
 .note-value { color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 8px 12px; font-size: 0.875rem; }
+.json-box { margin: 0; background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 10px; font-size: 0.78rem; overflow: auto; }
 .action-strip { background: #fff; border: 1px solid #e8eaed; border-radius: 14px; padding: 20px 24px; display: flex; flex-direction: column; gap: 14px; }
 .action-strip-hint { margin: 0; font-size: 0.88rem; color: #6b7280; }
 .action-strip-btns { display: flex; gap: 12px; flex-wrap: wrap; }

@@ -2,106 +2,59 @@
   <div class="page">
     <AdminAppSkeletonLoader v-if="loading" :rows="5" :cols="7" />
     <template v-else>
-      <!-- Header -->
       <div class="page-header">
         <div>
           <h2 class="page-title">คิวคำขออนุมัติ</h2>
-          <p class="page-desc">คำขอจากครูและบุคลากรที่รอการพิจารณา</p>
+          <p class="page-desc">คำขอแก้ไขข้อมูลโปรไฟล์จากครูที่รอการพิจารณา</p>
         </div>
         <div class="header-actions">
           <span class="total-badge">รออนุมัติ {{ pendingCount }} รายการ</span>
         </div>
       </div>
 
-      <!-- Summary strip -->
       <div class="summary-strip">
         <div v-for="s in summary" :key="s.label" class="summary-item">
-          <span class="s-value" :style="s.color ? `color:${s.color}` : ''">
-            {{ s.value }}
-          </span>
+          <span class="s-value" :style="s.color ? `color:${s.color}` : ''">{{ s.value }}</span>
           <span class="s-label">{{ s.label }}</span>
         </div>
       </div>
 
-      <!-- Search + Filter tabs -->
       <div class="toolbar">
         <div class="search-wrap">
           <svg class="search-icon" width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="6.5" cy="6.5" r="4.5" stroke="#9ca3af" stroke-width="1.4"/><path d="M10 10l3 3" stroke="#9ca3af" stroke-width="1.4" stroke-linecap="round"/></svg>
-          <input
-            v-model="search"
-            class="input search"
-            type="text"
-            placeholder="ค้นหาชื่อหรือประเภทคำขอ..."
-            autocomplete="off"
-          />
+          <input v-model="search" class="input search" type="text" placeholder="ค้นหาผู้ยื่นคำขอหรือรายละเอียด..." autocomplete="off" />
         </div>
         <div class="tab-row">
-          <button
-            v-for="tab in tabs"
-            :key="tab.key"
-            type="button"
-            class="tab"
-            :class="{ 'tab--active': activeTab === tab.key }"
-            @click="activeTab = tab.key"
-          >
+          <button v-for="tab in tabs" :key="tab.key" type="button" class="tab" :class="{ 'tab--active': activeTab === tab.key }" @click="activeTab = tab.key">
             {{ tab.label }}
             <span v-if="tab.count > 0" class="tab-count">{{ tab.count }}</span>
           </button>
         </div>
       </div>
 
-      <!-- Table -->
       <AdminDataTable :columns="cols" :rows="pagedRows">
         <template #cell-type="{ value }">
           <span class="type-cell">{{ value }}</span>
         </template>
 
         <template #cell-status="{ value }">
-          <AdminStatusBadge
-            :label="value as string"
-            :variant="value === 'รออนุมัติ' ? 'pending' : value === 'อนุมัติแล้ว' ? 'approved' : 'rejected'"
-          />
+          <AdminStatusBadge :label="value as string" :variant="value === 'รออนุมัติ' ? 'pending' : value === 'อนุมัติแล้ว' ? 'approved' : 'rejected'" />
         </template>
 
         <template #rowActions="{ row }">
           <div class="action-btns">
-            <button
-              v-if="(row as ApprovalRow).status === 'รออนุมัติ'"
-              type="button"
-              class="btn-action btn-approve"
-              @click="openApproveConfirm(row as ApprovalRow)"
-            >
-              อนุมัติ
-            </button>
-            <button
-              v-if="(row as ApprovalRow).status === 'รออนุมัติ'"
-              type="button"
-              class="btn-action btn-reject"
-              @click="openReject(row as ApprovalRow)"
-            >
-              ปฏิเสธ
-            </button>
-            <button
-              type="button"
-              class="btn-action btn-detail"
-              @click="openDetail(row as ApprovalRow)"
-            >
-              รายละเอียด
-            </button>
+            <button v-if="(row as ApprovalRow).status === 'รออนุมัติ'" type="button" class="btn-action btn-edit" @click="openApproveConfirm(row as ApprovalRow)">อนุมัติ</button>
+            <button v-if="(row as ApprovalRow).status === 'รออนุมัติ'" type="button" class="btn-action btn-delete" @click="openReject(row as ApprovalRow)">ปฏิเสธ</button>
+            <button type="button" class="btn-action btn-detail" @click="openDetail(row as ApprovalRow)">รายละเอียด</button>
           </div>
         </template>
       </AdminDataTable>
 
-      <!-- Pagination -->
       <div class="pagination">
         <span class="page-info">{{ (currentPage - 1) * pageSize + 1 }}–{{ Math.min(currentPage * pageSize, filteredRows.length) }} จาก {{ filteredRows.length }} รายการ</span>
         <div class="page-btns">
-          <button class="page-btn" :disabled="currentPage === 1" @click="currentPage = 1">
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M8 2L4 6l4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 2L1 6l4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
-          <button class="page-btn" :disabled="currentPage === 1" @click="currentPage--">
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M7 2L3 6l4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
+          <button class="page-btn" :disabled="currentPage === 1" @click="currentPage = 1">«</button>
+          <button class="page-btn" :disabled="currentPage === 1" @click="currentPage--">‹</button>
           <button
             v-for="p in pageNumbers"
             :key="p"
@@ -112,12 +65,8 @@
           >
             {{ p }}
           </button>
-          <button class="page-btn" :disabled="currentPage === totalPages" @click="currentPage++">
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M5 2l4 4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
-          <button class="page-btn" :disabled="currentPage === totalPages" @click="currentPage = totalPages">
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M4 2l4 4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 2l4 4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
+          <button class="page-btn" :disabled="currentPage === totalPages" @click="currentPage++">›</button>
+          <button class="page-btn" :disabled="currentPage === totalPages" @click="currentPage = totalPages">»</button>
         </div>
         <select v-model="pageSize" class="input page-size-select">
           <option :value="5">5</option>
@@ -127,16 +76,14 @@
         </select>
       </div>
 
-      <!-- Approve confirm modal -->
       <AdminAppConfirmModal
         v-model="showApproveModal"
         title="ยืนยันการอนุมัติ?"
-        :description="`ต้องการอนุมัติคำขอ '${approveTarget?.type}' ของ ${approveTarget?.requester} ใช่หรือไม่?`"
+        :description="`ต้องการอนุมัติคำขอของ ${approveTarget?.requester} ใช่หรือไม่?`"
         confirm-label="ยืนยันอนุมัติ"
         @confirm="confirmApprove"
       />
 
-      <!-- Reject reason modal -->
       <AdminAppModal
         v-model="showRejectModal"
         title="ระบุเหตุผลการปฏิเสธ"
@@ -155,42 +102,127 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
-import { useApprovalsData, type ApprovalRow } from '~/composables/useApprovalsData'
+import { computed, ref, watch } from 'vue'
 
 definePageMeta({ layout: 'admin' })
 
-const { loading } = usePageLoad()
-const { rows: allRows } = useApprovalsData()
+type BaseResponse<T> = { data: T }
 
-// ── Summary (computed from real data) ──
-const pendingCount = computed(() => allRows.value.filter(r => r.status === 'รออนุมัติ').length)
-const approvedCount = computed(() => allRows.value.filter(r => r.status === 'อนุมัติแล้ว').length)
-const rejectedCount = computed(() => allRows.value.filter(r => r.status === 'ปฏิเสธ').length)
+type ReportsApprovalApiItem = {
+  id: string
+  type: string
+  requester_name: string
+  requester_role: string
+  title: string
+  detail: string
+  status: 'pending' | 'approved' | 'rejected'
+  comment: string | null
+  created_at: string
+}
+
+type ApprovalRow = {
+  id: string
+  typeKey: string
+  type: string
+  requester: string
+  role: string
+  detail: string
+  date: string
+  status: 'รออนุมัติ' | 'อนุมัติแล้ว' | 'ปฏิเสธ'
+  note?: string
+  raw: ReportsApprovalApiItem
+}
+
+const { loading } = usePageLoad()
+const config = useRuntimeConfig()
+const authToken = useCookie<string | null>('edu_auth_token')
+const rows = ref<ApprovalRow[]>([])
+
+function authHeaders() {
+  return { Authorization: `Bearer ${authToken.value}` }
+}
+
+async function apiFetch<T>(path: string, options?: Parameters<typeof $fetch<T>>[1]) {
+  try {
+    return await $fetch<T>(`${config.public.apiBase}/back-office${path}`, options)
+  }
+  catch {
+    return await $fetch<T>(`${config.public.apiBase}${path}`, options)
+  }
+}
+
+function toThaiStatus(status: string): ApprovalRow['status'] {
+  if (status === 'approved') return 'อนุมัติแล้ว'
+  if (status === 'rejected') return 'ปฏิเสธ'
+  return 'รออนุมัติ'
+}
+
+function toThaiRole(role: string) {
+  const map: Record<string, string> = {
+    admin: 'แอดมิน',
+    staff: 'บุคลากร',
+    teacher: 'ครู',
+    student: 'นักเรียน',
+    parent: 'ผู้ปกครอง',
+  }
+  return map[role] || role
+}
+
+function toDateText(value: string) {
+  const dt = new Date(value)
+  if (Number.isNaN(dt.getTime())) return '-'
+  return dt.toLocaleDateString('th-TH')
+}
+
+async function loadRows() {
+  if (!import.meta.client || !authToken.value) return
+  try {
+    const res = await apiFetch<BaseResponse<{ items: ReportsApprovalApiItem[] }>>('/reports/approvals', { headers: authHeaders() })
+    rows.value = (res.data?.items || []).map(item => ({
+      id: item.id,
+      typeKey: item.type,
+      type: item.title,
+      requester: item.requester_name,
+      role: toThaiRole(item.requester_role),
+      detail: item.detail,
+      date: toDateText(item.created_at),
+      status: toThaiStatus(item.status),
+      note: item.comment || undefined,
+      raw: item,
+    }))
+  }
+  catch {
+    rows.value = []
+  }
+}
+
+if (import.meta.client) {
+  loadRows()
+}
+
+const pendingCount = computed(() => rows.value.filter(r => r.status === 'รออนุมัติ').length)
+const approvedCount = computed(() => rows.value.filter(r => r.status === 'อนุมัติแล้ว').length)
+const rejectedCount = computed(() => rows.value.filter(r => r.status === 'ปฏิเสธ').length)
 
 const summary = computed(() => [
   { value: pendingCount.value, label: 'รออนุมัติ', color: '#d97706' },
   { value: approvedCount.value, label: 'อนุมัติแล้ว', color: '#15803d' },
   { value: rejectedCount.value, label: 'ปฏิเสธ', color: '#b91c1c' },
-  { value: allRows.value.length, label: 'ทั้งหมด', color: '' },
+  { value: rows.value.length, label: 'ทั้งหมด', color: '' },
 ])
 
-// ── Tabs (with counts) ──
 const TAB_KEYS = [
   { key: 'all', label: 'ทั้งหมด' },
-  { key: 'แก้ไขข้อมูล', label: 'แก้ไขข้อมูล' },
-  { key: 'เปิดรายวิชา', label: 'เปิดรายวิชา' },
-  { key: 'เอกสาร', label: 'เอกสาร' },
-  { key: 'ลงทะเบียน', label: 'ลงทะเบียน' },
+  { key: 'pending', label: 'รออนุมัติ' },
+  { key: 'approved', label: 'อนุมัติแล้ว' },
+  { key: 'rejected', label: 'ปฏิเสธ' },
 ]
 const activeTab = ref('all')
 const tabs = computed(() =>
-  TAB_KEYS.map(t => ({
-    ...t,
-    count: t.key === 'all'
-      ? 0
-      : allRows.value.filter(r => r.type.includes(t.key) && r.status === 'รออนุมัติ').length,
-  }))
+  TAB_KEYS.map(tab => ({
+    ...tab,
+    count: tab.key === 'all' ? 0 : rows.value.filter(item => item.raw.status === tab.key).length,
+  })),
 )
 
 const cols = [
@@ -206,35 +238,30 @@ const cols = [
 const search = ref('')
 const currentPage = ref(1)
 const pageSize = ref(10)
-
-// reset page when filter/search changes
 watch([search, activeTab], () => { currentPage.value = 1 })
 watch(pageSize, () => { currentPage.value = 1 })
 
 const filteredRows = computed(() => {
-  let base = allRows.value
+  let base = rows.value
   if (activeTab.value !== 'all') {
-    base = base.filter(r => r.type.includes(activeTab.value))
+    base = base.filter(item => item.raw.status === activeTab.value)
   }
-  if (search.value) {
-    const q = search.value.toLowerCase()
-    base = base.filter(r =>
-      r.type.toLowerCase().includes(q) ||
-      r.requester.toLowerCase().includes(q) ||
-      r.detail.toLowerCase().includes(q)
+  if (search.value.trim()) {
+    const query = search.value.toLowerCase().trim()
+    base = base.filter(item =>
+      item.requester.toLowerCase().includes(query)
+      || item.type.toLowerCase().includes(query)
+      || item.detail.toLowerCase().includes(query),
     )
   }
   return base
 })
 
-// ── Pagination ──
 const totalPages = computed(() => Math.max(1, Math.ceil(filteredRows.value.length / pageSize.value)))
-
 const pagedRows = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value
   return filteredRows.value.slice(start, start + pageSize.value)
 })
-
 const pageNumbers = computed(() => {
   const total = totalPages.value
   const cur = currentPage.value
@@ -248,10 +275,9 @@ const pageNumbers = computed(() => {
 })
 
 function openDetail(row: ApprovalRow) {
-  navigateTo(`/admin/approvals/${encodeURIComponent(String(row.id))}`)
+  navigateTo(`/admin/approvals/${encodeURIComponent(row.id)}?type=${encodeURIComponent(row.typeKey)}`)
 }
 
-// ── Quick approve ──
 const showApproveModal = ref(false)
 const approveTarget = ref<ApprovalRow | null>(null)
 
@@ -260,15 +286,25 @@ function openApproveConfirm(row: ApprovalRow) {
   showApproveModal.value = true
 }
 
-function confirmApprove() {
-  if (!approveTarget.value) return
-  const idx = allRows.value.findIndex(r => r.id === approveTarget.value!.id)
-  if (idx !== -1) allRows.value[idx] = { ...allRows.value[idx], status: 'อนุมัติแล้ว' }
-  approveTarget.value = null
-  showApproveModal.value = false
+async function patchRequest(target: ApprovalRow, status: 'approved' | 'rejected', comment: string | null) {
+  await apiFetch(`/reports/approvals/${encodeURIComponent(target.typeKey)}/${target.id}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: {
+      status,
+      comment,
+    },
+  })
 }
 
-// ── Reject with reason ──
+async function confirmApprove() {
+  if (!approveTarget.value) return
+  await patchRequest(approveTarget.value, 'approved', null)
+  showApproveModal.value = false
+  approveTarget.value = null
+  await loadRows()
+}
+
 const showRejectModal = ref(false)
 const rejectTarget = ref<ApprovalRow | null>(null)
 const rejectNote = ref('')
@@ -281,13 +317,19 @@ function openReject(row: ApprovalRow) {
   showRejectModal.value = true
 }
 
-function confirmReject() {
-  if (!rejectNote.value.trim()) { rejectNoteError.value = 'กรุณาระบุเหตุผล'; return }
+async function confirmReject() {
+  if (!rejectNote.value.trim()) {
+    rejectNoteError.value = 'กรุณาระบุเหตุผล'
+    return
+  }
   if (!rejectTarget.value) return
-  const idx = allRows.value.findIndex(r => r.id === rejectTarget.value!.id)
-  if (idx !== -1) allRows.value[idx] = { ...allRows.value[idx], status: 'ปฏิเสธ', note: rejectNote.value.trim() }
+
+  await patchRequest(rejectTarget.value, 'rejected', rejectNote.value.trim())
   showRejectModal.value = false
   rejectTarget.value = null
+  rejectNote.value = ''
+  rejectNoteError.value = ''
+  await loadRows()
 }
 </script>
 
@@ -315,19 +357,17 @@ function confirmReject() {
 .tab { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #e5e7eb; border-radius: 9px; padding: 7px 14px; font-size: 0.86rem; background: #fff; color: #374151; cursor: pointer; font-family: inherit; transition: background 0.12s, border-color 0.12s; }
 .tab:hover:not(.tab--active) { background: #f9fafb; }
 .tab--active { background: #111827; color: #fff; border-color: #111827; }
-.tab--active:hover { background: #1f2937; }
 .tab-count { background: #ef4444; color: #fff; border-radius: 999px; font-size: 0.7rem; font-weight: 700; min-width: 18px; padding: 1px 5px; text-align: center; line-height: 1.4; }
-.tab--active .tab-count { background: rgba(255,255,255,0.25); }
 
 .type-cell { font-weight: 500; font-size: 0.88rem; }
-.action-btns { display: flex; gap: 5px; justify-content: flex-end; }
+.action-btns { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: nowrap; }
 .btn-action { border-radius: 7px; padding: 4px 9px; font-size: 0.78rem; border: 1px solid #d1d5db; background: #f9fafb; color: #374151; cursor: pointer; font-family: inherit; transition: background 0.1s; }
-.btn-approve { border-color: #bbf7d0; background: #f0fdf4; color: #15803d; }
-.btn-approve:hover { background: #dcfce7; }
-.btn-reject { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
-.btn-reject:hover { background: #fee2e2; }
 .btn-detail { border-color: #e5e7eb; background: #fff; color: #374151; }
 .btn-detail:hover { background: #f9fafb; }
+.btn-edit { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
+.btn-edit:hover { background: #dbeafe; }
+.btn-delete { border-color: #fecaca; background: #fff5f5; color: #dc2626; }
+.btn-delete:hover { background: #fee2e2; }
 
 .field { display: flex; flex-direction: column; gap: 5px; font-size: 0.83rem; font-weight: 500; color: #374151; }
 .req { color: #ef4444; }

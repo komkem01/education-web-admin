@@ -12,33 +12,34 @@
     <!-- ── Metric Cards ── -->
     <div class="grid-4 section-gap">
       <AdminMetricCard icon="👥" label="บุคลากรทั้งหมด" :value="String(personnelRows.length)" :sub="`อยู่ในระบบ ${activePersonnelCount} คน`" :trend="4" accent="#6366f1" />
-      <AdminMetricCard icon="🎓" label="ครูทั้งหมด" :value="String(teacherRows.length)" :sub="`สอนอยู่ ${activeTeacherCount} คน`" :trend="2" accent="#0ea5e9" />
-      <AdminMetricCard icon="📚" label="นักเรียนทั้งหมด" :value="studentRows.length.toLocaleString()" :sub="`ลงทะเบียนแล้ว ${registeredStudentCount} คน`" :trend="5" accent="#10b981" />
-      <AdminMetricCard icon="✅" label="คำขอรออนุมัติ" :value="String(pendingCount)" :sub="`ทั้งหมด ${approvalRows.length} รายการ`" :trend="-2" accent="#f59e0b" />
+      <AdminMetricCard icon="🎓" label="ครูทั้งหมด" :value="String(summary.teachers_total)" :sub="`สอนอยู่ ${summary.teachers_active} คน`" :trend="2" accent="#0ea5e9" />
+      <AdminMetricCard icon="📚" label="นักเรียนทั้งหมด" :value="summary.students_total.toLocaleString()" :sub="`ลงทะเบียนแล้ว ${summary.students_active} คน`" :trend="5" accent="#10b981" />
+      <AdminMetricCard icon="✅" label="คำขอรออนุมัติ" :value="String(pendingCount)" :sub="`ทั้งหมด ${allApprovalCount} รายการ`" :trend="-2" accent="#f59e0b" />
     </div>
 
     <!-- ── Quick Stats ── -->
     <div class="grid-3 section-gap">
       <div class="stat-card">
         <div class="stat-label">งานวิชาการ</div>
-        <div class="stat-row"><span>รายวิชาที่เปิดสอน</span><strong>{{ courseRows.length }}</strong></div>
+        <div class="stat-row"><span>รายวิชาที่เปิดสอน</span><strong>{{ summary.courses_total }}</strong></div>
         <div class="stat-row"><span>นักเรียนติด 0/ร/มส</span><strong>{{ failGradeCount }}</strong></div>
-        <div class="stat-row"><span>เอกสาร ปพ. ค้างออก</span><strong>7</strong></div>
+        <div class="stat-row"><span>เอกสาร ปพ. ค้างออก</span><strong>{{ summary.document_pending_total }}</strong></div>
         <NuxtLink to="/admin/school" class="stat-link">ไปหน้าวิชาการ →</NuxtLink>
       </div>
 
       <div class="stat-card">
         <div class="stat-label">งานทะเบียน</div>
-        <div class="stat-row"><span>ย้ายเข้าเทอมนี้</span><strong>8</strong></div>
-        <div class="stat-row"><span>ย้ายออกเทอมนี้</span><strong>3</strong></div>
-        <div class="stat-row"><span>รอเลื่อนชั้นปี</span><strong>234</strong></div>
+        <div class="stat-row"><span>ย้ายเข้าเทอมนี้</span><strong title="นับจาก student_enrollments.status = active (ภายใต้ปี/เทอมที่เลือก)">{{ summary.transfer_in_total }}</strong></div>
+        <div class="stat-row"><span>ย้ายออกเทอมนี้</span><strong title="นับจาก student_enrollments.status = dropped (ภายใต้ปี/เทอมที่เลือก)">{{ summary.transfer_out_total }}</strong></div>
+        <div class="stat-row"><span>รอเลื่อนชั้นปี</span><strong title="นับจาก student_enrollments.status = incomplete (ภายใต้ปี/เทอมที่เลือก)">{{ summary.promotion_pending_total }}</strong></div>
+        <!-- <p class="stat-hint">นิยามข้อมูล: active = ย้ายเข้า, dropped = ย้ายออก, incomplete = รอเลื่อนชั้นปี</p> -->
         <NuxtLink to="/admin/students" class="stat-link">ไปหน้านักเรียน →</NuxtLink>
       </div>
 
       <div class="stat-card">
         <div class="stat-label">งานปกครอง</div>
         <div class="stat-row"><span>นักเรียนถูกตัดคะแนน</span><strong>{{ lowDisciplineCount }}</strong></div>
-        <div class="stat-row"><span>แจ้งเตือนผู้ปกครองวันนี้</span><strong>4</strong></div>
+        <div class="stat-row"><span>แจ้งเตือนผู้ปกครองวันนี้</span><strong>{{ summary.parent_notifications_today }}</strong></div>
         <div class="stat-row"><span>รอดำเนินการ</span><strong>{{ pendingCount }}</strong></div>
         <NuxtLink to="/admin/approvals" class="stat-link">ไปหน้าอนุมัติ →</NuxtLink>
       </div>
@@ -184,39 +185,205 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { usePersonnelsData } from '~/composables/usePersonnelsData'
-import { useTeachersData } from '~/composables/useTeachersData'
-import { useStudentsData } from '~/composables/useStudentsData'
-import { useApprovalsData, type ApprovalRow } from '~/composables/useApprovalsData'
-import { useCoursesData } from '~/composables/useCoursesData'
-import { useGradesData, getGrade } from '~/composables/useGradesData'
 
 definePageMeta({ layout: 'admin' })
 
+type BaseResponse<T> = { data: T }
+
+type SummaryData = {
+  teachers_total: number
+  teachers_active: number
+  students_total: number
+  students_active: number
+  transfer_in_total: number
+  transfer_out_total: number
+  promotion_pending_total: number
+  subjects_total: number
+  courses_total: number
+  grade_records_total: number
+  grade_pass_total: number
+  grade_fail_total: number
+  attendance_total: number
+  attendance_present: number
+  attendance_absent: number
+  behavior_total: number
+  behavior_good: number
+  behavior_bad: number
+  document_pending_total: number
+  parent_notifications_today: number
+}
+
+type ReportsApprovalApiItem = {
+  id: string
+  type: string
+  requester_name: string
+  requester_role: string
+  title: string
+  detail: string
+  status: 'pending' | 'approved' | 'rejected'
+  comment: string | null
+  created_at: string
+}
+
+type RoleMemberApiItem = {
+  id: string
+  email: string
+  active_role: string
+  name: string
+  roles: string[]
+}
+
+type ApprovalRow = {
+  id: string
+  typeKey: string
+  requester: string
+  role: string
+  type: string
+  detail: string
+  date: string
+  createdAt: string
+  status: 'รออนุมัติ' | 'อนุมัติแล้ว' | 'ปฏิเสธ'
+}
+
 const { loading } = usePageLoad()
 const { displayName, displayRole } = useAdminAuth()
+const config = useRuntimeConfig()
+const authToken = useCookie<string | null>('edu_auth_token')
+
+const summary = ref<SummaryData>({
+  teachers_total: 0,
+  teachers_active: 0,
+  students_total: 0,
+  students_active: 0,
+  transfer_in_total: 0,
+  transfer_out_total: 0,
+  promotion_pending_total: 0,
+  subjects_total: 0,
+  courses_total: 0,
+  grade_records_total: 0,
+  grade_pass_total: 0,
+  grade_fail_total: 0,
+  attendance_total: 0,
+  attendance_present: 0,
+  attendance_absent: 0,
+  behavior_total: 0,
+  behavior_good: 0,
+  behavior_bad: 0,
+  document_pending_total: 0,
+  parent_notifications_today: 0,
+})
+const approvals = ref<ApprovalRow[]>([])
+const roleMembers = ref<RoleMemberApiItem[]>([])
+
+function authHeaders() {
+  return { Authorization: `Bearer ${authToken.value}` }
+}
+
+async function apiFetch<T>(path: string, options?: Parameters<typeof $fetch<T>>[1]) {
+  try {
+    return await $fetch<T>(`${config.public.apiBase}/back-office${path}`, options)
+  }
+  catch {
+    return await $fetch<T>(`${config.public.apiBase}${path}`, options)
+  }
+}
+
+function toThaiStatus(status: string): ApprovalRow['status'] {
+  if (status === 'approved') return 'อนุมัติแล้ว'
+  if (status === 'rejected') return 'ปฏิเสธ'
+  return 'รออนุมัติ'
+}
+
+function toThaiRole(role: string) {
+  const map: Record<string, string> = {
+    admin: 'แอดมิน',
+    staff: 'บุคลากร',
+    teacher: 'ครู',
+    student: 'นักเรียน',
+    parent: 'ผู้ปกครอง',
+  }
+  return map[role] || role
+}
+
+function toDateText(value: string) {
+  const dt = new Date(value)
+  if (Number.isNaN(dt.getTime())) return '-'
+  return dt.toLocaleDateString('th-TH')
+}
+
+async function loadDashboard() {
+  if (!import.meta.client || !authToken.value) return
+  try {
+    const [summaryRes, approvalsRes, rolesRes] = await Promise.all([
+      apiFetch<BaseResponse<{ summary: SummaryData }>>('/reports/summary', { headers: authHeaders() }),
+      apiFetch<BaseResponse<{ items: ReportsApprovalApiItem[] }>>('/reports/approvals', { headers: authHeaders() }),
+      apiFetch<BaseResponse<{ items: RoleMemberApiItem[] }>>('/reports/roles-members', { headers: authHeaders() }),
+    ])
+
+    summary.value = summaryRes.data?.summary || summary.value
+    roleMembers.value = rolesRes.data?.items || []
+    approvals.value = (approvalsRes.data?.items || []).map(item => ({
+      id: item.id,
+      typeKey: item.type,
+      requester: item.requester_name,
+      role: toThaiRole(item.requester_role),
+      type: item.title,
+      detail: item.detail,
+      date: toDateText(item.created_at),
+      createdAt: item.created_at,
+      status: toThaiStatus(item.status),
+    })).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+  }
+  catch {
+    summary.value = {
+      teachers_total: 0,
+      teachers_active: 0,
+      students_total: 0,
+      students_active: 0,
+      transfer_in_total: 0,
+      transfer_out_total: 0,
+      promotion_pending_total: 0,
+      subjects_total: 0,
+      courses_total: 0,
+      grade_records_total: 0,
+      grade_pass_total: 0,
+      grade_fail_total: 0,
+      attendance_total: 0,
+      attendance_present: 0,
+      attendance_absent: 0,
+      behavior_total: 0,
+      behavior_good: 0,
+      behavior_bad: 0,
+      document_pending_total: 0,
+      parent_notifications_today: 0,
+    }
+    approvals.value = []
+    roleMembers.value = []
+  }
+}
+
+if (import.meta.client) {
+  loadDashboard()
+}
 
 const headerIdentity = computed(() => {
   if (!displayName.value) return displayRole.value
   return `${displayRole.value} · ${displayName.value}`
 })
 
-const { rows: personnelRows } = usePersonnelsData()
-const { rows: teacherRows } = useTeachersData()
-const { rows: studentRows } = useStudentsData()
-const { rows: approvalRows } = useApprovalsData()
-const { rows: courseRows } = useCoursesData()
-const { rows: gradeRows } = useGradesData()
+const personnelRows = computed(() =>
+  roleMembers.value.filter(member => member.roles.includes('admin') || member.roles.includes('staff')),
+)
 
 // ── Metric cards ──
-const activePersonnelCount = computed(() => personnelRows.value.filter(r => r.status === 'ใช้งาน').length)
-const activeTeacherCount = computed(() => teacherRows.value.filter(r => r.status === 'อนุมัติแล้ว').length)
-const registeredStudentCount = computed(() => studentRows.value.filter(r => r.status === 'ปกติ').length)
-const pendingCount = computed(() => approvalRows.value.filter(r => r.status === 'รออนุมัติ').length)
+const activePersonnelCount = computed(() => personnelRows.value.length)
+const pendingCount = computed(() => approvals.value.filter(r => r.status === 'รออนุมัติ').length)
+const allApprovalCount = computed(() => approvals.value.length)
 
 // ── Quick stats ──
-const failGradeCount = computed(() => gradeRows.value.filter(r => getGrade(r) === '0').length)
-const lowDisciplineCount = computed(() => studentRows.value.filter(s => s.discipline < 70).length)
+const failGradeCount = computed(() => summary.value.grade_fail_total)
+const lowDisciplineCount = computed(() => summary.value.behavior_bad)
+const approvalRows = computed(() => approvals.value.filter(item => item.status === 'รออนุมัติ').slice(0, 5))
 
 const approvalCols = [
   { key: 'type', label: 'ประเภทคำขอ' },
@@ -247,14 +414,28 @@ function openReject(row: ApprovalRow) {
   showRejectModal.value = true
 }
 
-function confirmApprove() {
-  if (pendingRow.value) pendingRow.value.status = 'อนุมัติแล้ว'
+async function patchApproval(row: ApprovalRow, status: 'approved' | 'rejected') {
+  await apiFetch(`/reports/approvals/${encodeURIComponent(row.typeKey)}/${encodeURIComponent(row.id)}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: { status },
+  })
+}
+
+async function confirmApprove() {
+  if (pendingRow.value) {
+    await patchApproval(pendingRow.value, 'approved')
+    await loadDashboard()
+  }
   showApproveModal.value = false
   pendingRow.value = null
 }
 
-function confirmReject() {
-  if (pendingRow.value) pendingRow.value.status = 'ปฏิเสธ'
+async function confirmReject() {
+  if (pendingRow.value) {
+    await patchApproval(pendingRow.value, 'rejected')
+    await loadDashboard()
+  }
   showRejectModal.value = false
   pendingRow.value = null
 }
@@ -363,6 +544,13 @@ function confirmReject() {
   color: #111827;
 }
 
+.stat-hint {
+  margin: -2px 0 0;
+  font-size: 0.75rem;
+  color: #9ca3af;
+  line-height: 1.45;
+}
+
 .stat-link {
   font-size: 0.8rem;
   color: #6366f1;
@@ -412,6 +600,7 @@ function confirmReject() {
   gap: 6px;
   justify-content: flex-end;
   align-items: center;
+  flex-wrap: nowrap;
 }
 
 .done-label {
@@ -503,14 +692,14 @@ function confirmReject() {
   font-size: 0.78rem;
   font-weight: 500;
   border: 1px solid #e5e7eb;
-  background: #f9fafb;
+  background: #fff;
   color: #374151;
   cursor: pointer;
   font-family: inherit;
   transition: background 0.12s;
 }
 
-.btn-detail:hover { background: #f3f4f6; }
+.btn-detail:hover { background: #f9fafb; }
 
 /* Detail modal */
 .detail-body {
