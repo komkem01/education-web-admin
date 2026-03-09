@@ -11,9 +11,18 @@
             </div>
             <h3 class="confirm-title">{{ title ?? 'ยืนยันการลบ?' }}</h3>
             <p class="confirm-desc">{{ description ?? 'ข้อมูลนี้จะถูกลบถาวรและไม่สามารถกู้คืนได้' }}</p>
+            <div v-if="requiredText" class="confirm-input-wrap">
+              <label class="confirm-input-label">พิมพ์คำว่า '{{ requiredTextLabel || requiredText }}' เพื่อยืนยัน</label>
+              <input
+                v-model="typedText"
+                type="text"
+                class="confirm-input"
+                :placeholder="requiredTextLabel || requiredText"
+              >
+            </div>
             <div class="confirm-footer">
               <button type="button" class="btn btn-ghost" @click="$emit('update:modelValue', false)">ยกเลิก</button>
-              <button type="button" class="btn btn-danger" @click="$emit('confirm')">{{ confirmLabel ?? 'ลบข้อมูล' }}</button>
+              <button type="button" class="btn btn-danger" :disabled="!canConfirm" @click="$emit('confirm')">{{ confirmLabel ?? 'ลบข้อมูล' }}</button>
             </div>
           </div>
       </div>
@@ -22,17 +31,32 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{
+import { computed, ref, watch } from 'vue'
+
+const props = defineProps<{
   modelValue: boolean
   title?: string
   description?: string
   confirmLabel?: string
+  requiredText?: string
+  requiredTextLabel?: string
 }>()
 
 defineEmits<{
   (e: 'update:modelValue', v: boolean): void
   (e: 'confirm'): void
 }>()
+
+const typedText = ref('')
+
+const canConfirm = computed(() => {
+  if (!props.requiredText) return true
+  return typedText.value.trim() === props.requiredText
+})
+
+watch(() => props.modelValue, (next) => {
+  if (!next) typedText.value = ''
+})
 </script>
 
 <style scoped>
@@ -87,6 +111,33 @@ defineEmits<{
   margin: 4px 0 12px;
 }
 
+.confirm-input-wrap {
+  width: 100%;
+  text-align: left;
+  margin-bottom: 10px;
+}
+
+.confirm-input-label {
+  display: block;
+  font-size: 0.78rem;
+  color: #6b7280;
+  margin-bottom: 6px;
+}
+
+.confirm-input {
+  width: 100%;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.875rem;
+  font-family: inherit;
+  outline: none;
+}
+
+.confirm-input:focus {
+  border-color: #9ca3af;
+}
+
 .confirm-footer {
   display: flex;
   gap: 8px;
@@ -123,6 +174,13 @@ defineEmits<{
 
 .btn-danger:hover {
   background: #dc2626;
+}
+
+.btn-danger:disabled {
+  background: #fecaca;
+  border-color: #fecaca;
+  color: #ffffff;
+  cursor: not-allowed;
 }
 
 .overlay-enter-active,

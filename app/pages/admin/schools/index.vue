@@ -100,50 +100,33 @@
                   <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M8.5 1.5l3 3L4 12H1v-3L8.5 1.5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" fill="none"/></svg>
                   แก้ไข
                 </button>
+                <button type="button" class="btn btn-outline" @click="startAddYearTerm">เพิ่มเทอมใหม่</button>
               </template>
               <template v-else>
                 <button type="button" class="btn btn-ghost-sm" @click="cancelEditYear">ยกเลิก</button>
-                <button type="button" class="btn btn-save" @click="saveYear">บันทึก</button>
+                <button type="button" class="btn btn-save" @click="saveYear">{{ addingYearTerm ? 'สร้างเทอม' : 'บันทึก' }}</button>
               </template>
             </div>
           </div>
+
+          <p v-if="addingYearTerm" class="inline-loading">โหมดเพิ่มเทอมใหม่: สร้างข้อมูลปีการศึกษา+เทอมใหม่สำหรับโรงเรียนนี้</p>
 
           <p v-if="yearLoading" class="inline-loading">กำลังโหลดปีการศึกษา...</p>
           <p v-if="yearError" class="inline-error">{{ yearError }}</p>
 
           <div class="form-group">
             <label class="field-label">ปีการศึกษา</label>
-            <div class="search-select-wrap">
-              <input
-                v-model="yearForm.year"
-                class="input"
-                :class="{ 'input--disabled': !editingYear }"
-                :disabled="!editingYear"
-                list="academic-year-list"
-                placeholder="เลือกปีการศึกษา"
-                autocomplete="off"
-              />
-              <datalist id="academic-year-list">
-                <option v-for="item in academicYearOptions" :key="item" :value="item" />
-              </datalist>
-            </div>
+            <select v-model="yearForm.year" class="input" :class="{ 'input--disabled': !editingYear }" :disabled="!editingYear">
+              <option value="">เลือกปีการศึกษา</option>
+              <option v-for="item in academicYearOptions" :key="item" :value="item">{{ item }}</option>
+            </select>
           </div>
           <div class="form-group">
             <label class="field-label">ภาคเรียนที่</label>
-            <div class="search-select-wrap">
-              <input
-                v-model="yearForm.semester"
-                class="input"
-                :class="{ 'input--disabled': !editingYear }"
-                :disabled="!editingYear"
-                list="semester-list"
-                placeholder="เลือกภาคเรียน"
-                autocomplete="off"
-              />
-              <datalist id="semester-list">
-                <option v-for="item in semesterOptions" :key="item" :value="item" />
-              </datalist>
-            </div>
+            <select v-model="yearForm.semester" class="input" :class="{ 'input--disabled': !editingYear }" :disabled="!editingYear">
+              <option value="">เลือกภาคเรียน</option>
+              <option v-for="item in semesterOptions" :key="item" :value="item">{{ item }}</option>
+            </select>
           </div>
           <div class="form-group">
             <label class="field-label">วันเปิดเรียน</label>
@@ -462,32 +445,62 @@ function saveSchool() {
 
 // ── Year form ──
 const editingYear = ref(false)
+const addingYearTerm = ref(false)
 const yearForm = reactive({ year: '', semester: '', start: '', end: '' })
 let yearSnapshot = { ...yearForm }
 const academicYears = ref<AcademicYearModel[]>([])
 const currentAcademicYearId = ref('')
+const MIN_BE_YEAR = 2500
+const MAX_BE_YEAR = 2700
 
 const academicYearOptions = computed(() => {
   const values = new Set(academicYears.value.map(item => item.year).filter(Boolean))
+  const inferredBase = new Date().getFullYear() + 543
+
+  for (let offset = -1; offset <= 5; offset += 1) {
+    values.add(String(inferredBase + offset))
+  }
+
   return Array.from(values).sort((a, b) => Number(b) - Number(a))
 })
 
 const semesterOptions = computed(() => {
-  const values = new Set(
-    academicYears.value
-      .filter(item => !yearForm.year || item.year === yearForm.year)
-      .map(item => item.term)
-      .filter(Boolean),
-  )
+  const values = new Set(['1', '2', '3'])
+
+  for (const item of academicYears.value) {
+    if ((!yearForm.year || item.year === yearForm.year) && item.term) {
+      values.add(item.term)
+    }
+  }
+
   return Array.from(values).sort((a, b) => Number(a) - Number(b))
 })
 
 function bindAcademicYearForm(item: AcademicYearModel) {
   currentAcademicYearId.value = item.id
-  yearForm.year = item.year
+  yearForm.year = normalizeBuddhistYear(item.year)
   yearForm.semester = item.term
   yearForm.start = item.start_date
   yearForm.end = item.end_date
+}
+
+function normalizeBuddhistYear(value: string) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+
+  const numeric = Number(raw)
+  if (Number.isFinite(numeric) && numeric > 1000 && numeric < 2400) {
+    return String(Math.trunc(numeric) + 543)
+  }
+
+  return raw
+}
+
+function normalizeAcademicYearRows(list: AcademicYearModel[]) {
+  return list.map(item => ({
+    ...item,
+    year: normalizeBuddhistYear(item.year),
+  }))
 }
 
 function formatDateThaiDisplay(isoDate: string) {
@@ -511,14 +524,14 @@ async function loadAcademicYears() {
       headers: authHeaders(),
     })
 
-    academicYears.value = res.data || []
+    academicYears.value = normalizeAcademicYearRows(res.data || [])
   }
   catch {
     try {
       const res = await $fetch<AcademicYearResponse>(`${config.public.apiBase}/academic-years`, {
         headers: authHeaders(),
       })
-      academicYears.value = res.data || []
+      academicYears.value = normalizeAcademicYearRows(res.data || [])
     }
     catch {
       yearError.value = 'ไม่สามารถโหลดข้อมูลปีการศึกษาได้'
@@ -536,9 +549,14 @@ async function loadAcademicYears() {
 }
 
 watch(() => [yearForm.year, yearForm.semester], () => {
-  if (!editingYear.value) return
+  if (!editingYear.value || addingYearTerm.value) return
   const match = academicYears.value.find(item => item.year === yearForm.year && item.term === yearForm.semester)
-  if (!match) return
+  if (!match) {
+    currentAcademicYearId.value = ''
+    yearForm.start = ''
+    yearForm.end = ''
+    return
+  }
   currentAcademicYearId.value = match.id
   yearForm.start = match.start_date
   yearForm.end = match.end_date
@@ -546,10 +564,26 @@ watch(() => [yearForm.year, yearForm.semester], () => {
 
 function startEditYear() {
   yearSnapshot = { ...yearForm }
+  addingYearTerm.value = false
   editingYear.value = true
 }
+
+function startAddYearTerm() {
+  yearSnapshot = { ...yearForm }
+  addingYearTerm.value = true
+  editingYear.value = true
+  currentAcademicYearId.value = ''
+
+  const existingYear = yearForm.year.trim()
+  yearForm.year = existingYear || academicYearOptions.value[0] || ''
+  yearForm.semester = ''
+  yearForm.start = ''
+  yearForm.end = ''
+}
+
 function cancelEditYear() {
   Object.assign(yearForm, yearSnapshot)
+  addingYearTerm.value = false
   editingYear.value = false
 }
 async function saveYear() {
@@ -558,7 +592,7 @@ async function saveYear() {
   yearError.value = ''
 
   const payload = {
-    year: yearForm.year.trim(),
+    year: normalizeBuddhistYear(yearForm.year.trim()),
     term: yearForm.semester.trim(),
     is_current: true,
     is_active: true,
@@ -571,8 +605,24 @@ async function saveYear() {
     return
   }
 
+  const parsedYear = Number(payload.year)
+  if (!Number.isInteger(parsedYear) || parsedYear < MIN_BE_YEAR || parsedYear > MAX_BE_YEAR) {
+    yearError.value = `ปีการศึกษาต้องเป็น พ.ศ. และอยู่ในช่วง ${MIN_BE_YEAR}-${MAX_BE_YEAR}`
+    return
+  }
+
   const matched = academicYears.value.find(item => item.year === payload.year && item.term === payload.term)
-  const targetId = matched?.id || ''
+  const targetId = addingYearTerm.value ? '' : (currentAcademicYearId.value || matched?.id || '')
+
+  if (!addingYearTerm.value && !targetId) {
+    yearError.value = 'ไม่พบรายการปีการศึกษาที่ต้องการแก้ไข'
+    return
+  }
+
+  if (addingYearTerm.value && matched) {
+    yearError.value = 'ปีการศึกษาและเทอมนี้มีอยู่แล้ว กรุณาเลือกเทอมใหม่หรือใช้โหมดแก้ไข'
+    return
+  }
 
   try {
     if (targetId) {
@@ -614,6 +664,7 @@ async function saveYear() {
   }
 
   await loadAcademicYears()
+  addingYearTerm.value = false
   editingYear.value = false
 }
 

@@ -13,27 +13,15 @@
 
       <!-- Filters -->
       <div class="filter-bar">
-        <div class="search-wrap">
-          <svg class="search-icon" width="15" height="15" viewBox="0 0 15 15" fill="none">
-            <circle cx="6.5" cy="6.5" r="4.5" stroke="#9ca3af" stroke-width="1.4" />
-            <path d="M10 10l3 3" stroke="#9ca3af" stroke-width="1.4" stroke-linecap="round" />
-          </svg>
-          <input
-            v-model="search"
-            class="search-input"
-            list="ssg-search-list"
-            placeholder="ค้นหาชื่อกลุ่มย่อย / กลุ่มหลัก…"
-            autocomplete="off"
-          />
-          <datalist id="ssg-search-list">
-            <option v-for="r in rows" :key="r.id" :value="r.name" />
-          </datalist>
-        </div>
+        <select v-model="filterSubgroup" class="filter-select">
+          <option value="">ทุกกลุ่มย่อย</option>
+          <option v-for="row in rows" :key="row.id" :value="row.id">{{ row.name }}</option>
+        </select>
         <select v-model="filterParent" class="filter-select">
           <option value="">ทุกกลุ่มสาระหลัก</option>
           <option v-for="g in parentGroupOptions" :key="g.value" :value="g.value">{{ g.label }}</option>
         </select>
-        <button v-if="search || filterParent" type="button" class="btn btn-clear" @click="clearFilters">ล้างตัวกรอง</button>
+        <button v-if="filterSubgroup || filterParent" type="button" class="btn btn-clear" @click="clearFilters">ล้างตัวกรอง</button>
       </div>
 
       <!-- Table -->
@@ -45,7 +33,7 @@
         <template #rowActions="{ row }">
           <div class="action-btns">
             <button type="button" class="btn btn-sm btn-edit" @click="openEdit(row as SubjectSubGroupRow)">แก้ไข</button>
-            <button type="button" class="btn btn-sm btn-danger" @click="openDelete(row as SubjectSubGroupRow)">ลบ</button>
+            <button type="button" class="btn btn-sm btn-delete" @click="openDelete(row as SubjectSubGroupRow)">ลบ</button>
           </div>
         </template>
       </AdminDataTable>
@@ -97,7 +85,6 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useAdminAuth } from '~/composables/useAdminAuth'
 
 definePageMeta({ layout: 'admin' })
 
@@ -106,12 +93,6 @@ type BaseResponse<T> = { data: T }
 type SubjectGroupApiItem = {
   id: string
   name: string
-}
-
-type SubjectApiItem = {
-  id: string
-  subject_group_id: string | null
-  subject_subgroup_id: string | null
 }
 
 type SubjectSubgroupApiItem = {
@@ -134,10 +115,8 @@ type SubjectSubGroupRow = {
 const { loading } = usePageLoad()
 const config = useRuntimeConfig()
 const authToken = useCookie<string | null>('edu_auth_token')
-const { profile } = useAdminAuth()
 const rows = ref<SubjectSubGroupRow[]>([])
 const subjectGroupRows = ref<SubjectGroupApiItem[]>([])
-const createdSubgroupIDs = ref<string[]>([])
 
 function authHeaders() {
   return { Authorization: `Bearer ${authToken.value}` }
@@ -167,35 +146,14 @@ function mapRow(item: SubjectSubgroupApiItem): SubjectSubGroupRow {
 async function loadRows() {
   if (!import.meta.client || !authToken.value) return
 
-  const schoolID = profile.value.schoolId
-  if (!schoolID) {
-    subjectGroupRows.value = []
-    rows.value = []
-    return
-  }
-
   try {
-    const [groupsRes, subgroupsRes, subjectsRes] = await Promise.all([
+    const [groupsRes, subgroupsRes] = await Promise.all([
       apiFetch<BaseResponse<SubjectGroupApiItem[]>>('/subject-groups?only_active=false', { headers: authHeaders() }),
       apiFetch<BaseResponse<SubjectSubgroupApiItem[]>>('/subject-subgroups?only_active=false', { headers: authHeaders() }),
-      apiFetch<BaseResponse<SubjectApiItem[]>>(`/subjects?school_id=${schoolID}`, { headers: authHeaders() }),
     ])
-
-    const allowedGroupIDs = new Set<string>()
-    const allowedSubgroupIDs = new Set<string>()
-    for (const item of (Array.isArray(subjectsRes.data) ? subjectsRes.data : [])) {
-      const groupID = (item.subject_group_id || '').trim()
-      const subgroupID = (item.subject_subgroup_id || '').trim()
-      if (groupID) allowedGroupIDs.add(groupID)
-      if (subgroupID) allowedSubgroupIDs.add(subgroupID)
-    }
-
-    const created = new Set(createdSubgroupIDs.value)
     const groups = Array.isArray(groupsRes.data) ? groupsRes.data : []
-    subjectGroupRows.value = groups.filter(item => allowedGroupIDs.has(item.id))
-    rows.value = (Array.isArray(subgroupsRes.data) ? subgroupsRes.data : [])
-      .filter(item => allowedSubgroupIDs.has(item.id) || created.has(item.id))
-      .map(mapRow)
+    subjectGroupRows.value = groups
+    rows.value = (Array.isArray(subgroupsRes.data) ? subgroupsRes.data : []).map(mapRow)
   }
   catch {
     subjectGroupRows.value = []
@@ -216,19 +174,19 @@ const cols = [
 const parentGroupOptions = computed(() => subjectGroupRows.value.map(r => ({ value: r.id, label: r.name })))
 
 // ── Filters ──
-const search = ref('')
+const filterSubgroup = ref('')
 const filterParent = ref('')
 
 const filteredRows = computed(() => {
-  let data = rows.value
-  const q = search.value.toLowerCase().trim()
-  if (q) data = data.filter(r => r.name.toLowerCase().includes(q) || r.code.toLowerCase().includes(q) || r.parentGroup.toLowerCase().includes(q))
-  if (filterParent.value) data = data.filter(r => r.parentGroupId === filterParent.value)
-  return data
+  return rows.value.filter(row => {
+    if (filterSubgroup.value && row.id !== filterSubgroup.value) return false
+    if (filterParent.value && row.parentGroupId !== filterParent.value) return false
+    return true
+  })
 })
 
 function clearFilters() {
-  search.value = ''
+  filterSubgroup.value = ''
   filterParent.value = ''
 }
 
@@ -295,7 +253,6 @@ async function saveRow() {
         headers: authHeaders(),
         body: payload,
       })
-      createdSubgroupIDs.value = Array.from(new Set([...createdSubgroupIDs.value, res.data.id]))
       rows.value.push(mapRow(res.data))
     }
     showModal.value = false
@@ -325,7 +282,6 @@ async function confirmDelete() {
       method: 'DELETE',
       headers: authHeaders(),
     })
-    createdSubgroupIDs.value = createdSubgroupIDs.value.filter(id => id !== deleteTarget.value!.id)
     rows.value = rows.value.filter(r => r.id !== deleteTarget.value!.id)
     deleteTarget.value = null
   }
@@ -336,17 +292,52 @@ async function confirmDelete() {
 </script>
 
 <style scoped>
-.page { display: flex; flex-direction: column; gap: 22px; }
-.page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 6px;
+  background: radial-gradient(circle at top right, #ccfbf1 0%, #f8fafc 50%, #ffffff 100%);
+}
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px;
+  border-radius: 14px;
+  border: 1px solid #d1fae5;
+  background: linear-gradient(135deg, #ffffff 0%, #ecfeff 100%);
+}
+
 .page-title { font-size: 1.2rem; font-weight: 700; margin: 0; color: #111827; }
 .page-desc { color: #6b7280; margin-top: 4px; font-size: 0.85rem; }
 
-.filter-bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-.search-wrap { position: relative; flex: 1; min-width: 220px; }
-.search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); pointer-events: none; }
-.search-input { width: 100%; padding: 8px 12px 8px 32px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 0.875rem; font-family: inherit; outline: none; box-sizing: border-box; transition: border-color 0.15s; background: #fff; }
-.search-input:focus { border-color: #6366f1; }
-.filter-select { padding: 8px 12px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 0.875rem; font-family: inherit; outline: none; background: #fff; cursor: pointer; }
+.filter-bar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.filter-select {
+  min-width: 220px;
+  padding: 8px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-family: inherit;
+  outline: none;
+  background: #fff;
+  cursor: pointer;
+}
+
+.filter-select:focus { border-color: #14b8a6; }
 
 .action-btns { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: nowrap; }
 .btn { display: inline-flex; align-items: center; gap: 6px; border-radius: 8px; padding: 8px 14px; font-size: 0.875rem; font-weight: 500; border: 1px solid #d1d5db; background: #fff; color: #111827; cursor: pointer; font-family: inherit; transition: background 0.12s; }
@@ -355,8 +346,8 @@ async function confirmDelete() {
 .btn-sm { padding: 5px 10px; font-size: 0.8rem; }
 .btn-edit { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
 .btn-edit:hover { background: #dbeafe; }
-.btn-danger { border-color: #fecaca; background: #fff5f5; color: #dc2626; }
-.btn-danger:hover { background: #fee2e2; }
+.btn-delete { border-color: #fecaca; background: #fff5f5; color: #dc2626; }
+.btn-delete:hover { background: #fee2e2; }
 .btn-clear { border: 1px solid #e5e7eb; background: #fff; color: #6b7280; font-size: 0.8rem; padding: 7px 12px; white-space: nowrap; }
 .btn-clear:hover { background: #f9fafb; color: #374151; }
 

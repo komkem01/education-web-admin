@@ -13,23 +13,15 @@
 
       <!-- Filters -->
       <div class="filter-bar">
-        <div class="search-wrap">
-          <svg class="search-icon" width="15" height="15" viewBox="0 0 15 15" fill="none">
-            <circle cx="6.5" cy="6.5" r="4.5" stroke="#9ca3af" stroke-width="1.4" />
-            <path d="M10 10l3 3" stroke="#9ca3af" stroke-width="1.4" stroke-linecap="round" />
-          </svg>
-          <input
-            v-model="search"
-            class="search-input"
-            list="dept-list"
-            placeholder="ค้นหาชื่อฝ่ายงาน / หัวหน้าฝ่าย…"
-            autocomplete="off"
-          />
-          <datalist id="dept-list">
-            <option v-for="r in rows" :key="r.id" :value="r.name" />
-          </datalist>
-        </div>
-        <button v-if="search" type="button" class="btn btn-clear" @click="search = ''">ล้างตัวกรอง</button>
+        <select v-model="filterDepartmentId" class="filter-select">
+          <option value="">ทุกฝ่ายงาน</option>
+          <option v-for="r in rows" :key="r.id" :value="r.id">{{ r.name }}</option>
+        </select>
+        <select v-model="filterHead" class="filter-select">
+          <option value="">ทุกหัวหน้าฝ่าย</option>
+          <option v-for="opt in headOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+        </select>
+        <button v-if="filterDepartmentId || filterHead" type="button" class="btn btn-clear" @click="clearFilters">ล้างตัวกรอง</button>
       </div>
 
       <!-- Table -->
@@ -41,7 +33,7 @@
         <template #rowActions="{ row }">
           <div class="action-btns">
             <button type="button" class="btn btn-sm btn-edit" @click="openEdit(row as DepartmentRow)">แก้ไข</button>
-            <button type="button" class="btn btn-sm btn-danger" @click="openDelete(row as DepartmentRow)">ลบ</button>
+            <button type="button" class="btn btn-sm btn-delete" @click="openDelete(row as DepartmentRow)">ลบ</button>
           </div>
         </template>
       </AdminDataTable>
@@ -66,9 +58,9 @@
             <span v-if="formErrors.code" class="field-error">{{ formErrors.code }}</span>
           </div>
           <div class="form-group form-group--full">
-            <label class="form-label">หัวหน้าฝ่าย</label>
+            <label class="form-label">หัวหน้าฝ่าย (เฉพาะครู/บุคลากร)</label>
             <select v-model="form.head" class="form-input">
-              <option value="">-- เลือกหัวหน้าฝ่าย --</option>
+              <option value="">-- เลือกหัวหน้าฝ่าย (ครู/บุคลากร) --</option>
               <option v-for="opt in headOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
             </select>
           </div>
@@ -176,14 +168,12 @@ async function loadRows() {
 async function loadHeadOptions() {
   if (!import.meta.client || !authToken.value) return
   try {
-    const [adminsRes, staffsRes, teachersRes] = await Promise.all([
-      apiFetch<BaseResponse<PersonApiItem[]>>('/admins?only_active=true', { headers: authHeaders() }),
+    const [staffsRes, teachersRes] = await Promise.all([
       apiFetch<BaseResponse<PersonApiItem[]>>('/staffs?only_active=true', { headers: authHeaders() }),
       apiFetch<BaseResponse<PersonApiItem[]>>('/teachers?only_active=true', { headers: authHeaders() }),
     ])
 
     const merged = [
-      ...(Array.isArray(adminsRes.data) ? adminsRes.data : []),
       ...(Array.isArray(staffsRes.data) ? staffsRes.data : []),
       ...(Array.isArray(teachersRes.data) ? teachersRes.data : []),
     ]
@@ -216,16 +206,20 @@ const cols = [
 ]
 
 // ── Filters ──
-const search = ref('')
+const filterDepartmentId = ref('')
+const filterHead = ref('')
+
+function clearFilters() {
+  filterDepartmentId.value = ''
+  filterHead.value = ''
+}
 
 const filteredRows = computed(() => {
-  const q = search.value.toLowerCase().trim()
-  if (!q) return rows.value
-  return rows.value.filter(r =>
-    r.name.toLowerCase().includes(q)
-    || r.code.toLowerCase().includes(q)
-    || r.head.toLowerCase().includes(q),
-  )
+  return rows.value.filter(row => {
+    if (filterDepartmentId.value && row.id !== filterDepartmentId.value) return false
+    if (filterHead.value && row.head !== filterHead.value) return false
+    return true
+  })
 })
 
 // ── Add / Edit ──

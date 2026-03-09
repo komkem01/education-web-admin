@@ -66,7 +66,7 @@
         <template #rowActions="{ row }">
           <div class="action-btns">
             <button type="button" class="btn btn-sm btn-edit" @click="openEdit(row as BehaviorRow)">แก้ไข</button>
-            <button type="button" class="btn btn-sm btn-danger" @click="openDelete(row as BehaviorRow)">ลบ</button>
+            <button type="button" class="btn btn-sm btn-delete" @click="openDelete(row as BehaviorRow)">ลบ</button>
           </div>
         </template>
       </AdminDataTable>
@@ -82,17 +82,10 @@
         <div class="form-grid">
           <div class="form-group">
             <label class="form-label">รหัสนักเรียน <span class="req">*</span></label>
-            <input
-              v-model="form.studentId"
-              class="form-input"
-              list="student-list"
-              placeholder="รหัสนักเรียน"
-              autocomplete="off"
-              @change="fillStudent"
-            />
-            <datalist id="student-list">
+            <select v-model="form.studentId" class="form-input" @change="fillStudent">
+              <option value="">-- เลือกนักเรียน --</option>
               <option v-for="s in studentRows" :key="s.id" :value="s.code">{{ s.code }} - {{ s.name }}</option>
-            </datalist>
+            </select>
             <span v-if="formErrors.studentId" class="field-error">{{ formErrors.studentId }}</span>
           </div>
           <div class="form-group">

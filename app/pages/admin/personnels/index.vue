@@ -13,29 +13,15 @@
       </div>
 
       <div class="filter-row">
-        <div class="search-wrap">
-          <svg class="search-icon" width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="6.5" cy="6.5" r="4.5" stroke="#9ca3af" stroke-width="1.4" /><path d="M10 10l3 3" stroke="#9ca3af" stroke-width="1.4" stroke-linecap="round" /></svg>
-          <input
-            v-model="search"
-            class="input search"
-            list="personnel-search-list"
-            type="text"
-            placeholder="ค้นหาชื่อ หรือรหัสบุคลากร..."
-            autocomplete="off"
-          />
-          <datalist id="personnel-search-list">
-            <option v-for="r in rows" :key="r.memberId" :value="r.name" />
-            <option v-for="r in rows" :key="`${r.memberId}-code`" :value="r.personnelCode" />
-          </datalist>
-        </div>
-        <AdminSearchSelect
-          v-model="filterDept"
-          class="sel"
-          :options="deptFilterOptions"
-          placeholder="ฝ่ายงานทั้งหมด"
-          :clearable="true"
-        />
-        <button v-if="search || filterDept" type="button" class="btn btn-clear" @click="clearFilters">ล้างตัวกรอง</button>
+        <select v-model="filterMemberId" class="filter-select">
+          <option value="">บุคลากรทั้งหมด</option>
+          <option v-for="r in rows" :key="r.memberId" :value="r.memberId">{{ r.personnelCode }} - {{ r.name }}</option>
+        </select>
+        <select v-model="filterDept" class="filter-select">
+          <option value="">ฝ่ายงานทั้งหมด</option>
+          <option v-for="opt in deptFilterOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+        </select>
+        <button v-if="filterMemberId || filterDept" type="button" class="btn btn-clear" @click="clearFilters">ล้างตัวกรอง</button>
       </div>
 
       <AdminDataTable title="รายชื่อบุคลากร" :columns="cols" :rows="filteredRows" :page-size="10">
@@ -102,17 +88,11 @@
 
           <label class="field">
             <span>ฝ่ายงาน</span>
-            <input
-              v-model="form.dept"
-              class="input"
-              type="text"
-              list="personnel-dept-options"
-              placeholder="ค้นหาหรือเลือกฝ่ายงาน"
-              autocomplete="off"
-            />
-            <datalist id="personnel-dept-options">
-              <option v-for="d in deptOptions" :key="d" :value="d" />
-            </datalist>
+            <select v-model="form.dept" class="input">
+              <option value="">{{ deptOptions.length === 0 ? 'ยังไม่มีข้อมูลฝ่ายงาน' : 'เลือกฝ่ายงาน' }}</option>
+              <option v-for="d in deptOptions" :key="d" :value="d">{{ d }}</option>
+            </select>
+            <span v-if="deptOptions.length === 0" class="field-hint">ยังไม่มีข้อมูลฝ่ายงาน กรุณาเพิ่มที่หน้า "ฝ่ายงาน" ก่อน</span>
           </label>
 
           <label class="field">
@@ -212,6 +192,16 @@ type PrefixItem = {
   is_active: boolean
 }
 
+type DepartmentApiItem = {
+  id: string
+  school_id: string
+  code: string
+  name: string
+  head: string | null
+  description: string | null
+  is_active: boolean
+}
+
 type PersonnelRow = {
   memberId: string
   personnelCode: string
@@ -239,7 +229,6 @@ type PersonnelForm = {
   genderId: string
   prefixId: string
   dept: string
-  roles: string[]
   phone: string
   status: string
   email: string
@@ -262,6 +251,7 @@ const pageLoading = ref(false)
 const errorMessage = ref('')
 const genderRows = ref<GenderItem[]>([])
 const prefixRows = ref<PrefixItem[]>([])
+const departmentRows = ref<DepartmentApiItem[]>([])
 
 const cols = [
   { key: 'personnelCode', label: 'รหัสบุคลากร' },
@@ -274,14 +264,16 @@ const cols = [
   { key: 'status', label: 'สถานะ' },
 ]
 
-const search = ref('')
+const filterMemberId = ref('')
 const filterDept = ref('')
 
-const deptOptions = computed(() => [...new Set(rows.value.map(r => r.dept).filter(Boolean))])
-const deptFilterOptions = computed(() => ([
-  { label: 'ฝ่ายงานทั้งหมด', value: '' },
-  ...deptOptions.value.map(d => ({ label: d, value: d })),
-]))
+const deptOptions = computed(() =>
+  departmentRows.value
+    .filter(item => item.is_active)
+    .map(item => item.name)
+    .filter(Boolean),
+)
+const deptFilterOptions = computed(() => deptOptions.value.map(d => ({ label: d, value: d })))
 const statusOptions = [
   { label: 'ใช้งาน', value: 'ใช้งาน' },
   { label: 'ไม่ใช้งาน', value: 'ไม่ใช้งาน' },
@@ -304,10 +296,9 @@ const prefixOptions = computed(() => {
 
 const filteredRows = computed(() =>
   rows.value.filter((r) => {
-    const q = search.value.trim().toLowerCase()
-    const matchSearch = !q || r.name.toLowerCase().includes(q) || r.personnelCode.toLowerCase().includes(q)
+    const matchMember = !filterMemberId.value || r.memberId === filterMemberId.value
     const matchDept = !filterDept.value || r.dept === filterDept.value
-    return matchSearch && matchDept
+    return matchMember && matchDept
   }),
 )
 
@@ -340,23 +331,32 @@ async function fetchMemberRoles(memberId: string) {
 }
 
 function clearFilters() {
-  search.value = ''
+  filterMemberId.value = ''
   filterDept.value = ''
 }
 
 async function loadRows() {
   if (!import.meta.client || !authToken.value) return
 
+  const schoolId = profile.value.schoolId
+  if (!schoolId) {
+    errorMessage.value = 'ไม่พบ school_id ใน session'
+    rows.value = []
+    departmentRows.value = []
+    return
+  }
+
   pageLoading.value = true
   errorMessage.value = ''
 
   try {
-    const [membersRes, staffsRes, adminsRes, gendersRes, prefixesRes] = await Promise.all([
+    const [membersRes, staffsRes, adminsRes, gendersRes, prefixesRes, departmentsRes] = await Promise.all([
       apiFetch<BaseResponse<MemberItem[]>>('/members?only_active=false', { headers: authHeaders() }),
       apiFetch<BaseResponse<StaffItem[]>>('/staffs?only_active=false', { headers: authHeaders() }),
       apiFetch<BaseResponse<AdminItem[]>>('/admins?only_active=false', { headers: authHeaders() }),
       apiFetch<BaseResponse<GenderItem[]>>('/genders?only_active=false', { headers: authHeaders() }),
       apiFetch<BaseResponse<PrefixItem[]>>('/prefixes?only_active=false', { headers: authHeaders() }),
+      apiFetch<BaseResponse<DepartmentApiItem[]>>(`/departments?school_id=${schoolId}&only_active=true`, { headers: authHeaders() }),
     ])
 
     const members = Array.isArray(membersRes.data) ? membersRes.data : []
@@ -364,6 +364,7 @@ async function loadRows() {
     const admins = Array.isArray(adminsRes.data) ? adminsRes.data : []
     genderRows.value = Array.isArray(gendersRes.data) ? gendersRes.data : []
     prefixRows.value = Array.isArray(prefixesRes.data) ? prefixesRes.data : []
+    departmentRows.value = Array.isArray(departmentsRes.data) ? departmentsRes.data : []
 
     const genderNameByID = new Map(genderRows.value.map(item => [item.id, item.name] as const))
     const prefixNameByID = new Map(prefixRows.value.map(item => [item.id, item.name] as const))
@@ -392,7 +393,7 @@ async function loadRows() {
       const lastName = (staff?.last_name || admin?.last_name || '').trim()
       const genderId = (staff?.gender_id || admin?.gender_id || '').trim()
       const prefixId = (staff?.prefix_id || admin?.prefix_id || '').trim()
-      const dept = (staff?.department || '').trim() || 'ฝ่ายบริหาร'
+      const dept = (staff?.department || '').trim()
       const phone = (staff?.phone || admin?.phone || '').trim()
       const active = Boolean((staff?.is_active ?? false) || (admin?.is_active ?? false))
       const personnelCode = (staff?.staff_code || '').trim() || (admin?.admin_code || '').trim() || '-'
@@ -422,6 +423,7 @@ async function loadRows() {
   catch {
     errorMessage.value = 'ไม่สามารถโหลดข้อมูลบุคลากรได้'
     rows.value = []
+    departmentRows.value = []
   }
   finally {
     pageLoading.value = false
@@ -700,10 +702,49 @@ async function confirmDelete() {
 .inline-error { margin-top: 6px; color: #dc2626; font-size: 0.82rem; }
 
 .filter-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.filter-select {
+  min-width: 220px;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  padding: 8px 36px 8px 12px;
+  font-size: 0.875rem;
+  font-family: inherit;
+  color: #111827;
+  background-color: #fff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%236B7280' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  appearance: none;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.filter-select:hover {
+  border-color: #9ca3af;
+}
+
+.filter-select:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+.filter-select:disabled {
+  background-color: #f9fafb;
+  color: #9ca3af;
+  cursor: not-allowed;
+}
 .search-wrap { position: relative; }
 .search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); pointer-events: none; }
 .input { border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 12px; font-size: 0.875rem; font-family: inherit; background: #fff; color: #111827; outline: none; transition: border-color 0.12s; }
 .input:focus { border-color: #6366f1; }
+select.input {
+  padding-right: 36px;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%236B7280' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
 .search { width: 260px; padding-left: 32px; }
 .sel { cursor: pointer; }
 
@@ -732,7 +773,15 @@ async function confirmDelete() {
 .checkbox-item { display: flex; align-items: center; gap: 5px; font-size: 0.85rem; cursor: pointer; color: #374151; }
 .req { color: #ef4444; }
 .field-error { font-size: 0.75rem; color: #ef4444; margin-top: 2px; }
+.field-hint { font-size: 0.75rem; color: #6b7280; margin-top: 2px; }
 .id-display { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; }
 .id-badge { font-size: 0.875rem; font-weight: 600; color: #374151; font-family: monospace; letter-spacing: 0.05em; }
 .id-hint { font-size: 0.75rem; color: #9ca3af; }
+
+@media (max-width: 760px) {
+  .filter-select {
+    width: 100%;
+    min-width: 0;
+  }
+}
 </style>

@@ -13,23 +13,15 @@
 
       <!-- Filters -->
       <div class="filter-bar">
-        <div class="search-wrap">
-          <svg class="search-icon" width="15" height="15" viewBox="0 0 15 15" fill="none">
-            <circle cx="6.5" cy="6.5" r="4.5" stroke="#9ca3af" stroke-width="1.4" />
-            <path d="M10 10l3 3" stroke="#9ca3af" stroke-width="1.4" stroke-linecap="round" />
-          </svg>
-          <input
-            v-model="search"
-            class="search-input"
-            list="sg-list"
-            placeholder="ค้นหาชื่อกลุ่มสาระ / หัวหน้า…"
-            autocomplete="off"
-          />
-          <datalist id="sg-list">
-            <option v-for="r in rows" :key="r.id" :value="r.name" />
-          </datalist>
-        </div>
-        <button v-if="search" type="button" class="btn btn-clear" @click="search = ''">ล้างตัวกรอง</button>
+        <select v-model="filterGroupId" class="filter-select">
+          <option value="">ทุกกลุ่มสาระ</option>
+          <option v-for="row in rows" :key="row.id" :value="row.id">{{ row.name }}</option>
+        </select>
+        <select v-model="filterHead" class="filter-select">
+          <option value="">ทุกหัวหน้ากลุ่มสาระ</option>
+          <option v-for="opt in headOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+        </select>
+        <button v-if="filterGroupId || filterHead" type="button" class="btn btn-clear" @click="clearFilters">ล้างตัวกรอง</button>
       </div>
 
       <!-- Table -->
@@ -41,7 +33,7 @@
         <template #rowActions="{ row }">
           <div class="action-btns">
             <button type="button" class="btn btn-sm btn-edit" @click="openEdit(row as SubjectGroupRow)">แก้ไข</button>
-            <button type="button" class="btn btn-sm btn-danger" @click="openDelete(row as SubjectGroupRow)">ลบ</button>
+            <button type="button" class="btn btn-sm btn-delete" @click="openDelete(row as SubjectGroupRow)">ลบ</button>
           </div>
         </template>
       </AdminDataTable>
@@ -66,9 +58,9 @@
             <span v-if="formErrors.code" class="field-error">{{ formErrors.code }}</span>
           </div>
           <div class="form-group">
-            <label class="form-label">หัวหน้ากลุ่มสาระ</label>
+            <label class="form-label">หัวหน้ากลุ่มสาระ (เฉพาะครู/บุคลากร)</label>
             <select v-model="form.head" class="form-input">
-              <option value="">-- เลือกหัวหน้ากลุ่มสาระ --</option>
+              <option value="">-- เลือกหัวหน้ากลุ่มสาระ (ครู/บุคลากร) --</option>
               <option v-for="opt in headOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
             </select>
           </div>
@@ -92,7 +84,6 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useAdminAuth } from '~/composables/useAdminAuth'
 
 definePageMeta({ layout: 'admin' })
 
@@ -105,11 +96,6 @@ type SubjectGroupApiItem = {
   head: string | null
   description: string | null
   is_active: boolean
-}
-
-type SubjectApiItem = {
-  id: string
-  subject_group_id: string | null
 }
 
 type PersonApiItem = {
@@ -134,10 +120,8 @@ type SubjectGroupRow = {
 const { loading } = usePageLoad()
 const config = useRuntimeConfig()
 const authToken = useCookie<string | null>('edu_auth_token')
-const { profile } = useAdminAuth()
 const rows = ref<SubjectGroupRow[]>([])
 const headOptions = ref<Option[]>([])
-const createdGroupIDs = ref<string[]>([])
 
 function authHeaders() {
   return { Authorization: `Bearer ${authToken.value}` }
@@ -165,28 +149,9 @@ function mapRow(item: SubjectGroupApiItem): SubjectGroupRow {
 async function loadRows() {
   if (!import.meta.client || !authToken.value) return
 
-  const schoolID = profile.value.schoolId
-  if (!schoolID) {
-    rows.value = []
-    return
-  }
-
   try {
-    const [groupsRes, subjectsRes] = await Promise.all([
-      apiFetch<BaseResponse<SubjectGroupApiItem[]>>('/subject-groups?only_active=false', { headers: authHeaders() }),
-      apiFetch<BaseResponse<SubjectApiItem[]>>(`/subjects?school_id=${schoolID}`, { headers: authHeaders() }),
-    ])
-
-    const allowedGroupIDs = new Set<string>()
-    for (const item of (Array.isArray(subjectsRes.data) ? subjectsRes.data : [])) {
-      const groupID = (item.subject_group_id || '').trim()
-      if (groupID) allowedGroupIDs.add(groupID)
-    }
-
-    const created = new Set(createdGroupIDs.value)
-    rows.value = (Array.isArray(groupsRes.data) ? groupsRes.data : [])
-      .filter(item => allowedGroupIDs.has(item.id) || created.has(item.id))
-      .map(mapRow)
+    const groupsRes = await apiFetch<BaseResponse<SubjectGroupApiItem[]>>('/subject-groups?only_active=false', { headers: authHeaders() })
+    rows.value = (Array.isArray(groupsRes.data) ? groupsRes.data : []).map(mapRow)
   }
   catch {
     rows.value = []
@@ -202,14 +167,12 @@ function displayName(item: PersonApiItem) {
 async function loadHeadOptions() {
   if (!import.meta.client || !authToken.value) return
   try {
-    const [adminsRes, staffsRes, teachersRes] = await Promise.all([
-      apiFetch<BaseResponse<PersonApiItem[]>>('/admins?only_active=true', { headers: authHeaders() }),
+    const [staffsRes, teachersRes] = await Promise.all([
       apiFetch<BaseResponse<PersonApiItem[]>>('/staffs?only_active=true', { headers: authHeaders() }),
       apiFetch<BaseResponse<PersonApiItem[]>>('/teachers?only_active=true', { headers: authHeaders() }),
     ])
 
     const merged = [
-      ...(Array.isArray(adminsRes.data) ? adminsRes.data : []),
       ...(Array.isArray(staffsRes.data) ? staffsRes.data : []),
       ...(Array.isArray(teachersRes.data) ? teachersRes.data : []),
     ]
@@ -242,16 +205,20 @@ const cols = [
 ]
 
 // ── Filters ──
-const search = ref('')
+const filterGroupId = ref('')
+const filterHead = ref('')
+
+function clearFilters() {
+  filterGroupId.value = ''
+  filterHead.value = ''
+}
 
 const filteredRows = computed(() => {
-  const q = search.value.toLowerCase().trim()
-  if (!q) return rows.value
-  return rows.value.filter(r =>
-    r.name.toLowerCase().includes(q)
-    || r.code.toLowerCase().includes(q)
-    || r.head.toLowerCase().includes(q),
-  )
+  return rows.value.filter(row => {
+    if (filterGroupId.value && row.id !== filterGroupId.value) return false
+    if (filterHead.value && row.head !== filterHead.value) return false
+    return true
+  })
 })
 
 // ── Add / Edit ──
@@ -315,7 +282,6 @@ async function saveRow() {
         headers: authHeaders(),
         body: payload,
       })
-      createdGroupIDs.value = Array.from(new Set([...createdGroupIDs.value, res.data.id]))
       rows.value.push(mapRow(res.data))
     }
     showModal.value = false
@@ -345,7 +311,6 @@ async function confirmDelete() {
       method: 'DELETE',
       headers: authHeaders(),
     })
-    createdGroupIDs.value = createdGroupIDs.value.filter(id => id !== deleteTarget.value!.id)
     rows.value = rows.value.filter(r => r.id !== deleteTarget.value!.id)
     deleteTarget.value = null
   }
@@ -356,16 +321,51 @@ async function confirmDelete() {
 </script>
 
 <style scoped>
-.page { display: flex; flex-direction: column; gap: 22px; }
-.page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 6px;
+  background: radial-gradient(circle at top right, #e0f2fe 0%, #f8fafc 45%, #ffffff 100%);
+}
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  background: linear-gradient(135deg, #ffffff 0%, #eff6ff 100%);
+}
+
 .page-title { font-size: 1.2rem; font-weight: 700; margin: 0; color: #111827; }
 .page-desc { color: #6b7280; margin-top: 4px; font-size: 0.85rem; }
 
-.filter-bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-.search-wrap { position: relative; flex: 1; min-width: 220px; }
-.search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); pointer-events: none; }
-.search-input { width: 100%; padding: 8px 12px 8px 32px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 0.875rem; font-family: inherit; outline: none; box-sizing: border-box; transition: border-color 0.15s; background: #fff; }
-.search-input:focus { border-color: #6366f1; }
+.filter-bar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.filter-select {
+  min-width: 220px;
+  padding: 8px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-family: inherit;
+  outline: none;
+  background: #fff;
+}
+
+.filter-select:focus { border-color: #0ea5e9; }
 
 .action-btns { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: nowrap; }
 .btn { display: inline-flex; align-items: center; gap: 6px; border-radius: 8px; padding: 8px 14px; font-size: 0.875rem; font-weight: 500; border: 1px solid #d1d5db; background: #fff; color: #111827; cursor: pointer; font-family: inherit; transition: background 0.12s; }
@@ -374,8 +374,8 @@ async function confirmDelete() {
 .btn-sm { padding: 5px 10px; font-size: 0.8rem; }
 .btn-edit { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
 .btn-edit:hover { background: #dbeafe; }
-.btn-danger { border-color: #fecaca; background: #fff5f5; color: #dc2626; }
-.btn-danger:hover { background: #fee2e2; }
+.btn-delete { border-color: #fecaca; background: #fff5f5; color: #dc2626; }
+.btn-delete:hover { background: #fee2e2; }
 .btn-clear { border: 1px solid #e5e7eb; background: #fff; color: #6b7280; font-size: 0.8rem; padding: 7px 12px; white-space: nowrap; }
 .btn-clear:hover { background: #f9fafb; color: #374151; }
 

@@ -1,4 +1,4 @@
-export type DayName = 'จันทร์' | 'อังคาร' | 'พุธ' | 'พฤหัสบดี' | 'ศุกร์'
+export type DayName = 'จันทร์' | 'อังคาร' | 'พุธ' | 'พฤหัสบดี' | 'ศุกร์' | 'เสาร์' | 'อาทิตย์'
 
 export interface TimetableSlot {
   id: number
@@ -11,7 +11,7 @@ export interface TimetableSlot {
   room: string
 }
 
-export const DAYS: DayName[] = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์']
+export const DAYS: DayName[] = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์']
 
 export const PERIODS = [
   { num: 1, start: '08:00', end: '08:50' },

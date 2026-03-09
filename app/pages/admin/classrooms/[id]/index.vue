@@ -72,16 +72,10 @@
           </div>
           <div class="form-group form-group--full">
             <label class="form-label">ครูประจำชั้น</label>
-            <input
-              v-model="form.advisorTeacherName"
-              class="form-input"
-              list="teacher-name-suggestions-detail"
-              placeholder="พิมพ์เพื่อค้นหาชื่อครู"
-              autocomplete="off"
-            />
-            <datalist id="teacher-name-suggestions-detail">
-              <option v-for="t in teacherOptions" :key="t.id" :value="t.name" />
-            </datalist>
+            <select v-model="form.advisorTeacherId" class="form-input">
+              <option value="">-- เลือกครูประจำชั้น --</option>
+              <option v-for="t in teacherOptions" :key="t.id" :value="t.id">{{ t.name }}</option>
+            </select>
           </div>
         </div>
       </AdminAppModal>
@@ -239,17 +233,6 @@ watch(id, async () => {
   await loadTeachers()
   await loadRecord()
 }, { immediate: true })
-
-watch(() => form.value.advisorTeacherName, (value) => {
-  const query = value.trim()
-  if (!query) {
-    form.value.advisorTeacherId = ''
-    return
-  }
-
-  const found = teacherOptions.value.find(t => t.name.toLowerCase() === query.toLowerCase())
-  form.value.advisorTeacherId = found?.id || ''
-})
 
 function openEdit() {
   if (!record.value) return

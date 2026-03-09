@@ -99,17 +99,10 @@
 
           <label class="field">
             <span>ฝ่ายงาน</span>
-            <input
-              v-model="form.dept"
-              class="input"
-              type="text"
-              list="personnel-detail-dept-options"
-              placeholder="ค้นหาหรือเลือกฝ่ายงาน"
-              autocomplete="off"
-            />
-            <datalist id="personnel-detail-dept-options">
-              <option v-for="d in deptOptions" :key="d" :value="d" />
-            </datalist>
+            <select v-model="form.dept" class="input">
+              <option value="">เลือกฝ่ายงาน</option>
+              <option v-for="d in deptOptions" :key="d" :value="d">{{ d }}</option>
+            </select>
           </label>
 
           <label class="field">
@@ -571,6 +564,13 @@ async function confirmDelete() {
 .field--full { grid-column: 1 / -1; }
 .input { border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 12px; font-size: 0.875rem; font-family: inherit; background: #fff; color: #111827; outline: none; transition: border-color 0.12s; }
 .input:focus { border-color: #6366f1; }
+select.input {
+  padding-right: 36px;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%236B7280' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
 .req { color: #ef4444; }
 .field-error { font-size: 0.75rem; color: #ef4444; }
 .id-display { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; }

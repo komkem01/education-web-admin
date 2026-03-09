@@ -14,22 +14,10 @@
 
       <!-- Filters -->
       <div class="filter-bar">
-        <div class="search-wrap">
-          <svg class="search-icon" width="15" height="15" viewBox="0 0 15 15" fill="none">
-            <circle cx="6.5" cy="6.5" r="4.5" stroke="#9ca3af" stroke-width="1.4" />
-            <path d="M10 10l3 3" stroke="#9ca3af" stroke-width="1.4" stroke-linecap="round" />
-          </svg>
-          <input
-            v-model="search"
-            class="search-input"
-            list="course-list"
-            placeholder="ค้นหาชื่อวิชา / รหัสวิชา…"
-            autocomplete="off"
-          />
-          <datalist id="course-list">
-            <option v-for="r in rows" :key="r.id" :value="r.name" />
-          </datalist>
-        </div>
+        <select v-model="filterCourseId" class="filter-select">
+          <option value="">ทุกรายวิชา</option>
+          <option v-for="r in rows" :key="r.id" :value="r.id">{{ r.code }} - {{ r.name }}</option>
+        </select>
         <select v-model="filterGroup" class="filter-select">
           <option value="">ทุกกลุ่มสาระ</option>
           <option v-for="g in groupOptions" :key="g.value" :value="g.value">{{ g.label }}</option>
@@ -43,7 +31,7 @@
           <option value="1">เทอม 1</option>
           <option value="2">เทอม 2</option>
         </select>
-        <button v-if="search || filterGroup || filterLevel || filterSemester" type="button" class="btn btn-clear" @click="clearFilters">ล้างตัวกรอง</button>
+        <button v-if="filterCourseId || filterGroup || filterLevel || filterSemester" type="button" class="btn btn-clear" @click="clearFilters">ล้างตัวกรอง</button>
       </div>
 
       <!-- Table -->
@@ -55,7 +43,7 @@
         <template #rowActions="{ row }">
           <div class="action-btns">
             <button type="button" class="btn btn-sm btn-edit" @click="openEdit(row as CourseRow)">แก้ไข</button>
-            <button type="button" class="btn btn-sm btn-danger" @click="openDelete(row as CourseRow)">ลบ</button>
+            <button type="button" class="btn btn-sm btn-delete" @click="openDelete(row as CourseRow)">ลบ</button>
           </div>
         </template>
       </AdminDataTable>
@@ -432,15 +420,14 @@ if (import.meta.client) {
 }
 
 // ── Filters ──
-const search = ref('')
+const filterCourseId = ref('')
 const filterGroup = ref('')
 const filterLevel = ref('')
 const filterSemester = ref('')
 
 const filteredRows = computed(() => {
-  const q = search.value.toLowerCase().trim()
   return rows.value.filter(r => {
-    if (q && !r.name.toLowerCase().includes(q) && !r.code.toLowerCase().includes(q)) return false
+    if (filterCourseId.value && r.id !== filterCourseId.value) return false
     if (filterGroup.value && r.subjectGroupId !== filterGroup.value) return false
     if (filterLevel.value && r.level !== filterLevel.value) return false
     if (filterSemester.value && r.semester !== filterSemester.value) return false
@@ -449,7 +436,7 @@ const filteredRows = computed(() => {
 })
 
 function clearFilters() {
-  search.value = ''
+  filterCourseId.value = ''
   filterGroup.value = ''
   filterLevel.value = ''
   filterSemester.value = ''

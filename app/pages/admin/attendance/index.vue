@@ -11,25 +11,13 @@
         <button type="button" class="btn btn-primary" @click="openAddSession">+ บันทึกรายวัน</button>
       </div>
 
-      <!-- Filters -->
-      <div class="filter-bar">
-        <input v-model="filterDate" type="date" class="filter-input" />
-        <select v-model="filterClassroom" class="filter-select">
-          <option value="">ทุกห้องเรียน</option>
-          <option v-for="c in classroomOptions" :key="c" :value="c">{{ c }}</option>
-        </select>
-        <select v-model="filterStatus" class="filter-select">
-          <option value="">ทุกสถานะ</option>
-          <option value="มาเรียน">มาเรียน</option>
-          <option value="ขาด">ขาด</option>
-          <option value="ลา">ลา</option>
-          <option value="สาย">สาย</option>
-        </select>
-        <button v-if="filterDate || filterClassroom || filterStatus" type="button" class="btn btn-clear" @click="clearFilters">ล้างตัวกรอง</button>
+      <div v-if="!sessionInitialized" class="setup-hint-card">
+        <div class="setup-hint-title">ยังไม่ได้เริ่มเช็คชื่อรายวัน</div>
+        <div class="setup-hint-desc">กดปุ่ม "บันทึกรายวัน" กรอกข้อมูลให้ครบ แล้วกดบันทึกก่อน ระบบจะแสดงรายชื่อนักเรียนให้ทันที</div>
       </div>
 
       <!-- Summary -->
-      <div v-if="filteredRows.length" class="summary-strip">
+      <div v-if="sessionInitialized && rows.length" class="summary-strip">
         <div class="summary-item summary-item--present">
           <span class="s-value">{{ statusCount('มาเรียน') }}</span>
           <span class="s-label">มาเรียน</span>
@@ -53,9 +41,9 @@
       </div>
 
       <!-- Table -->
-      <div class="table-card">
+      <div v-if="sessionInitialized" class="table-card">
         <div class="table-header">
-          <span class="table-title">บันทึกการเข้าเรียน ({{ filteredRows.length }} รายการ)</span>
+          <span class="table-title">บันทึกการเข้าเรียน ({{ rows.length }} รายการ)</span>
           <div class="table-header-right">
             <span v-if="totalPages > 1" class="page-info-inline">หน้า {{ currentPage }}/{{ totalPages }}</span>
             <div class="page-size-wrap">
@@ -118,14 +106,14 @@
                   <button type="button" class="act-btn act-btn--danger" @click="deleteRow(row)">ลบ</button>
                 </td>
               </tr>
-              <tr v-if="!filteredRows.length">
+              <tr v-if="!rows.length">
                 <td colspan="9" class="empty-td">ไม่พบข้อมูลที่ตรงเงื่อนไข</td>
               </tr>
             </tbody>
           </table>
         </div>
         <div v-if="totalPages > 1" class="pagination">
-          <span class="page-info">{{ rangeStart }}–{{ rangeEnd }} จาก {{ filteredRows.length }} รายการ</span>
+          <span class="page-info">{{ rangeStart }}–{{ rangeEnd }} จาก {{ rows.length }} รายการ</span>
           <div class="page-btns">
             <button type="button" class="page-btn" :disabled="currentPage === 1" @click="currentPage = 1">
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 10.5L5.5 7 9 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 3.5v7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -161,7 +149,7 @@
             </div>
             <div class="form-group">
               <label class="form-label">ห้องเรียน <span class="req">*</span></label>
-              <select v-model="sessionForm.classroomId" class="form-input" @change="loadStudents">
+              <select v-model="sessionForm.classroomId" class="form-input">
                 <option value="">-- เลือกห้อง --</option>
                 <option v-for="c in classroomRows" :key="c.id" :value="c.id">{{ c.name }}</option>
               </select>
@@ -170,7 +158,7 @@
             <div class="form-group">
               <label class="form-label">คาบที่</label>
               <select v-model.number="sessionForm.period" class="form-input">
-                <option v-for="p in 8" :key="p" :value="p">คาบ {{ p }}</option>
+                <option v-for="p in periodOptions" :key="p" :value="p">คาบ {{ p }}</option>
               </select>
             </div>
             <div class="form-group form-group--wide">
@@ -179,36 +167,9 @@
                 <option value="">-- เลือกรายวิชา --</option>
                 <option v-for="c in sessionCourseOptions" :key="c.id" :value="c.id">{{ c.label }}</option>
               </select>
+              <span v-if="formErrors.subject" class="field-error">{{ formErrors.subject }}</span>
             </div>
           </div>
-
-          <!-- Student list quick entry -->
-          <div v-if="sessionStudents.length" class="student-att">
-            <div class="student-att-header">
-              <span class="student-att-title">รายชื่อนักเรียน ({{ sessionStudents.length }} คน)</span>
-              <div class="bulk-btns">
-                <button type="button" class="btn-bulk btn-bulk--present" @click="markAll('มาเรียน')">มาทั้งหมด</button>
-                <button type="button" class="btn-bulk btn-bulk--absent" @click="markAll('ขาด')">ขาดทั้งหมด</button>
-              </div>
-            </div>
-            <div class="student-att-list">
-              <div v-for="s in sessionStudents" :key="s.studentId" class="student-att-row">
-                <span class="att-name">{{ s.studentName }}</span>
-                <div class="att-status-btns">
-                  <button
-                    v-for="st in ['มาเรียน','ขาด','ลา','สาย']"
-                    :key="st"
-                    type="button"
-                    class="att-btn"
-                    :class="[`att-btn--${st}`, { 'att-btn--active': s.status === st }]"
-                    @click="s.status = st as AttendanceStatus"
-                  >{{ st }}</button>
-                </div>
-                <input v-model="s.note" class="att-note" placeholder="หมายเหตุ..." />
-              </div>
-            </div>
-          </div>
-          <p v-else-if="sessionForm.classroomId" class="no-students">ไม่พบข้อมูลนักเรียนในห้องนี้</p>
         </div>
       </AdminAppModal>
     </template>
@@ -295,15 +256,8 @@ interface ScheduleApiItem {
   is_active: boolean
 }
 
-interface SessionStudent {
-  studentId: string
-  studentUUID: string
-  studentName: string
-  status: AttendanceStatus
-  note: string
-}
-
 const rows = ref<AttendanceRow[]>([])
+const sessionInitialized = ref(false)
 const classroomRows = ref<ClassroomApiItem[]>([])
 const studentRows = ref<Array<{ id: string; code: string; name: string; classroomId: string; classroomName: string }>>([])
 const enrollmentsByStudent = ref<Record<string, EnrollmentApiItem[]>>({})
@@ -311,8 +265,13 @@ const subjectAssignments = ref<SubjectAssignmentApiItem[]>([])
 const schedules = ref<ScheduleApiItem[]>([])
 const subjectsByID = ref<Record<string, string>>({})
 
-const classroomOptions = computed(() => classroomRows.value.map(r => r.name))
 const classroomNameByID = computed(() => Object.fromEntries(classroomRows.value.map(r => [r.id, r.name])))
+const periodOptions = computed(() => {
+  const unique = Array.from(new Set(schedules.value.map(s => s.period_no || 0).filter(p => p > 0)))
+    .sort((a, b) => a - b)
+  if (unique.length) return unique
+  return [1, 2, 3, 4, 5, 6, 7, 8]
+})
 
 function authHeaders() {
   return { Authorization: `Bearer ${authToken.value}` }
@@ -407,71 +366,19 @@ async function loadRows() {
   })
 
   studentRows.value = students
-
-  const assignmentByID = Object.fromEntries(subjectAssignments.value.map(a => [a.id, a])) as Record<string, SubjectAssignmentApiItem>
-  const scheduleByID = Object.fromEntries(schedules.value.map(s => [s.id, s])) as Record<string, ScheduleApiItem>
-
-  const nestedRows = await Promise.all(students.map(async (student) => {
-    const enrollments = await loadStudentEnrollments(student.id)
-    if (!enrollments.length) return [] as AttendanceRow[]
-
-    const logsRes = await safeApiFetch<BaseResponse<AttendanceApiItem[]>>(`/students/${student.id}/attendance-logs`, { data: [] }, { headers: authHeaders() })
-
-    const enrollmentByID = Object.fromEntries(enrollments.map(e => [e.id, e])) as Record<string, EnrollmentApiItem>
-    const logs = Array.isArray(logsRes.data) ? logsRes.data : []
-
-    return logs.map((log) => {
-      const enrollment = enrollmentByID[log.enrollment_id]
-      const assignment = enrollment ? assignmentByID[enrollment.subject_assignment_id] : undefined
-      const schedule = scheduleByID[log.schedule_id]
-      const courseName = assignment ? (subjectsByID.value[assignment.subject_id] || '-') : '-'
-      return {
-        id: log.id,
-        studentUUID: student.id,
-        studentId: student.code,
-        studentName: student.name,
-        classroom: student.classroomName,
-        date: (log.check_date || '').slice(0, 10),
-        period: schedule?.period_no || 0,
-        courseName,
-        status: apiStatusToUI(log.status),
-        note: (log.note || '').trim(),
-        enrollmentID: log.enrollment_id,
-        scheduleID: log.schedule_id,
-      } as AttendanceRow
-    })
-  }))
-
-  rows.value = nestedRows
-    .flat()
-    .sort((a, b) => `${b.date} ${String(b.period).padStart(2, '0')}`.localeCompare(`${a.date} ${String(a.period).padStart(2, '0')}`))
+  rows.value = []
+  sessionInitialized.value = false
 }
-
-// ── Filters ──
-const filterDate = ref('')
-const filterClassroom = ref('')
-const filterStatus = ref('')
-
-const filteredRows = computed(() => {
-  return rows.value.filter(r => {
-    if (filterDate.value && r.date !== filterDate.value) return false
-    if (filterClassroom.value && r.classroom !== filterClassroom.value) return false
-    if (filterStatus.value && r.status !== filterStatus.value) return false
-    return true
-  })
-})
-
-function clearFilters() { filterDate.value = ''; filterClassroom.value = ''; filterStatus.value = '' }
 
 // ── Pagination ──
 const pageSize = ref(10)
 const currentPage = ref(1)
-watch(() => filteredRows.value, () => { currentPage.value = 1 })
+watch(() => rows.value, () => { currentPage.value = 1 })
 watch(pageSize, () => { currentPage.value = 1 })
-const totalPages = computed(() => Math.max(1, Math.ceil(filteredRows.value.length / pageSize.value)))
-const rangeStart = computed(() => filteredRows.value.length === 0 ? 0 : (currentPage.value - 1) * pageSize.value + 1)
-const rangeEnd = computed(() => Math.min(currentPage.value * pageSize.value, filteredRows.value.length))
-const pagedRows = computed(() => filteredRows.value.slice((currentPage.value - 1) * pageSize.value, currentPage.value * pageSize.value))
+const totalPages = computed(() => Math.max(1, Math.ceil(rows.value.length / pageSize.value)))
+const rangeStart = computed(() => rows.value.length === 0 ? 0 : (currentPage.value - 1) * pageSize.value + 1)
+const rangeEnd = computed(() => Math.min(currentPage.value * pageSize.value, rows.value.length))
+const pagedRows = computed(() => rows.value.slice((currentPage.value - 1) * pageSize.value, currentPage.value * pageSize.value))
 const pageNumbers = computed<(number | '\u2026')[]>(() => {
   const total = totalPages.value
   const cur = currentPage.value
@@ -485,10 +392,10 @@ const pageNumbers = computed<(number | '\u2026')[]>(() => {
   add(total)
   return pages
 })
-function statusCount(s: AttendanceStatus) { return filteredRows.value.filter(r => r.status === s).length }
+function statusCount(s: AttendanceStatus) { return rows.value.filter(r => r.status === s).length }
 const presentPct = computed(() => {
-  if (!filteredRows.value.length) return 0
-  return Math.round((statusCount('มาเรียน') / filteredRows.value.length) * 100)
+  if (!rows.value.length) return 0
+  return Math.round((statusCount('มาเรียน') / rows.value.length) * 100)
 })
 
 function formatDate(d: string) {
@@ -556,8 +463,7 @@ async function deleteRow(row: AttendanceRow) {
 // ── Add session ──
 const showModal = ref(false)
 const sessionForm = ref({ date: '', classroomId: '', subjectAssignmentId: '', period: 1 })
-const formErrors = ref({ date: '', classroom: '' })
-const sessionStudents = ref<SessionStudent[]>([])
+const formErrors = ref({ date: '', classroom: '', subject: '' })
 
 const sessionCourseOptions = computed(() => {
   if (!sessionForm.value.classroomId) return [] as Array<{ id: string; label: string }>
@@ -567,29 +473,22 @@ const sessionCourseOptions = computed(() => {
     .map(a => ({ id: a.id, label: subjectsByID.value[a.subject_id] || a.id.slice(0, 8) }))
 })
 
-function loadStudents() {
-  const cls = sessionForm.value.classroomId
-  sessionStudents.value = studentRows.value
-    .filter(s => s.classroomId === cls)
-    .map(s => ({ studentId: s.code, studentUUID: s.id, studentName: s.name, status: 'มาเรียน' as AttendanceStatus, note: '' }))
-}
-
 function openAddSession() {
-  sessionForm.value = { date: new Date().toISOString().slice(0, 10), classroomId: '', subjectAssignmentId: '', period: 1 }
-  formErrors.value = { date: '', classroom: '' }
-  sessionStudents.value = []
+  sessionForm.value = {
+    date: new Date().toISOString().slice(0, 10),
+    classroomId: '',
+    subjectAssignmentId: '',
+    period: periodOptions.value[0] || 1,
+  }
+  formErrors.value = { date: '', classroom: '', subject: '' }
   showModal.value = true
 }
 
-function markAll(status: AttendanceStatus) {
-  sessionStudents.value.forEach(s => s.status = status)
-}
-
 async function saveSession() {
-  formErrors.value = { date: '', classroom: '' }
+  formErrors.value = { date: '', classroom: '', subject: '' }
   if (!sessionForm.value.date) { formErrors.value.date = 'กรุณาเลือกวันที่'; return }
   if (!sessionForm.value.classroomId) { formErrors.value.classroom = 'กรุณาเลือกห้องเรียน'; return }
-  if (!sessionForm.value.subjectAssignmentId) return
+  if (!sessionForm.value.subjectAssignmentId) { formErrors.value.subject = 'กรุณาเลือกรายวิชา'; return }
 
   const targetDay = dayOfWeekFromDate(sessionForm.value.date)
   const schedule = schedules.value.find(s =>
@@ -603,32 +502,88 @@ async function saveSession() {
     (s.period_no || 0) === sessionForm.value.period,
   )
 
-  if (!schedule) return
+  if (!schedule) {
+    formErrors.value.subject = 'ไม่พบตารางสอนสำหรับวิชา/คาบ/วันที่เลือก'
+    return
+  }
 
-  await Promise.all(sessionStudents.value.map(async (s) => {
-    const enrollments = await loadStudentEnrollments(s.studentUUID)
+  const classStudents = studentRows.value.filter(s => s.classroomId === sessionForm.value.classroomId)
+  if (!classStudents.length) {
+    formErrors.value.classroom = 'ไม่พบข้อมูลนักเรียนในห้องนี้'
+    return
+  }
+
+  const newRows: AttendanceRow[] = []
+
+  const assignmentByID = Object.fromEntries(subjectAssignments.value.map(a => [a.id, a])) as Record<string, SubjectAssignmentApiItem>
+  const pickedAssignment = assignmentByID[sessionForm.value.subjectAssignmentId]
+  const pickedCourseName = pickedAssignment ? (subjectsByID.value[pickedAssignment.subject_id] || '-') : '-'
+
+  await Promise.all(classStudents.map(async (s) => {
+    const enrollments = await loadStudentEnrollments(s.id)
     const enrollment = enrollments.find(e => e.subject_assignment_id === sessionForm.value.subjectAssignmentId)
     if (!enrollment) return
 
+    let logID = ''
+    let status: AttendanceStatus = 'มาเรียน'
+    let note = ''
+
     try {
-      await apiFetch(`/students/${s.studentUUID}/attendance-logs`, {
+      const created = await apiFetch<BaseResponse<AttendanceApiItem>>(`/students/${s.id}/attendance-logs`, {
         method: 'POST',
         headers: authHeaders(),
         body: {
           enrollment_id: enrollment.id,
           schedule_id: schedule.id,
           check_date: sessionForm.value.date,
-          status: uiStatusToAPI(s.status),
-          note: s.note,
+          status: 'present',
+          note: '',
         },
       })
+
+      logID = created.data?.id || ''
+      if (created.data?.status) status = apiStatusToUI(created.data.status)
+      note = (created.data?.note || '').trim()
     }
     catch {
-      // Skip invalid student/schedule rows without failing the whole batch.
+      const logsRes = await safeApiFetch<BaseResponse<AttendanceApiItem[]>>(`/students/${s.id}/attendance-logs`, { data: [] }, { headers: authHeaders() })
+      const found = (Array.isArray(logsRes.data) ? logsRes.data : []).find(log =>
+        log.enrollment_id === enrollment.id &&
+        log.schedule_id === schedule.id &&
+        (log.check_date || '').slice(0, 10) === sessionForm.value.date,
+      )
+
+      if (!found) return
+      logID = found.id
+      status = apiStatusToUI(found.status)
+      note = (found.note || '').trim()
     }
+
+    if (!logID) return
+
+    newRows.push({
+      id: logID,
+      studentUUID: s.id,
+      studentId: s.code,
+      studentName: s.name,
+      classroom: s.classroomName,
+      date: sessionForm.value.date,
+      period: sessionForm.value.period,
+      courseName: pickedCourseName,
+      status,
+      note,
+      enrollmentID: enrollment.id,
+      scheduleID: schedule.id,
+    })
   }))
 
-  await loadRows()
+  if (!newRows.length) {
+    formErrors.value.subject = 'ไม่พบนักเรียนที่ลงทะเบียนในรายวิชานี้สำหรับห้องที่เลือก'
+    return
+  }
+
+  rows.value = newRows.sort((a, b) => a.studentId.localeCompare(b.studentId))
+  sessionInitialized.value = true
   showModal.value = false
 }
 
@@ -649,6 +604,10 @@ if (import.meta.client) {
 .page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .page-title { font-size: 1.2rem; font-weight: 700; margin: 0; color: #111827; }
 .page-desc { color: #6b7280; margin-top: 4px; font-size: 0.85rem; }
+
+.setup-hint-card { border: 1px dashed #cbd5e1; background: #f8fafc; border-radius: 12px; padding: 14px 16px; }
+.setup-hint-title { font-size: 0.9rem; font-weight: 600; color: #111827; }
+.setup-hint-desc { margin-top: 4px; font-size: 0.82rem; color: #64748b; }
 
 .filter-bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .filter-input { padding: 8px 12px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 0.875rem; font-family: inherit; outline: none; background: #fff; }

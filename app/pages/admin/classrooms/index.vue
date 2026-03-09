@@ -13,28 +13,15 @@
       </div>
 
       <div class="filter-bar">
-        <div class="search-wrap">
-          <svg class="search-icon" width="15" height="15" viewBox="0 0 15 15" fill="none">
-            <circle cx="6.5" cy="6.5" r="4.5" stroke="#9ca3af" stroke-width="1.4" />
-            <path d="M10 10l3 3" stroke="#9ca3af" stroke-width="1.4" stroke-linecap="round" />
-          </svg>
-          <input
-            v-model="search"
-            class="search-input"
-            list="classroom-search-list"
-            placeholder="ค้นหาชื่อห้อง / ห้องที่ใช้เรียน"
-            autocomplete="off"
-          />
-          <datalist id="classroom-search-list">
-            <option v-for="r in rows" :key="r.id" :value="r.name" />
-            <option v-for="r in uniqueRooms" :key="r" :value="r" />
-          </datalist>
-        </div>
+        <select v-model="filterClassroomId" class="filter-select">
+          <option value="">ทุกห้องเรียน</option>
+          <option v-for="r in rows" :key="r.id" :value="r.id">{{ r.name }}</option>
+        </select>
         <select v-model="filterGrade" class="filter-select">
           <option value="">ทุกระดับชั้น</option>
           <option v-for="g in gradeOptions" :key="g" :value="g">{{ g }}</option>
         </select>
-        <button v-if="search || filterGrade" type="button" class="btn btn-clear" @click="clearFilters">
+        <button v-if="filterClassroomId || filterGrade" type="button" class="btn btn-clear" @click="clearFilters">
           ล้างตัวกรอง
         </button>
       </div>
@@ -71,23 +58,15 @@
           </div>
           <div class="form-group form-group--full">
             <label class="form-label">ห้องที่ใช้เรียน</label>
-            <input v-model="form.room" class="form-input" list="room-suggestions" placeholder="เช่น อาคาร 1 ห้อง 101" autocomplete="off" />
-            <datalist id="room-suggestions">
-              <option v-for="r in uniqueRooms" :key="r" :value="r" />
-            </datalist>
+            <input v-model="form.room" class="form-input" placeholder="เช่น อาคาร 1 ห้อง 101" />
+            <span class="field-hint">หากยังไม่มีข้อมูลตั้งค่า สามารถพิมพ์ห้องที่ใช้เรียนได้ทันที</span>
           </div>
           <div class="form-group form-group--full">
             <label class="form-label">ครูประจำชั้น</label>
-            <input
-              v-model="form.advisorTeacherName"
-              class="form-input"
-              list="teacher-name-suggestions"
-              placeholder="พิมพ์เพื่อค้นหาชื่อครู"
-              autocomplete="off"
-            />
-            <datalist id="teacher-name-suggestions">
-              <option v-for="t in teacherOptions" :key="t.id" :value="t.name" />
-            </datalist>
+            <select v-model="form.advisorTeacherId" class="form-input">
+              <option value="">-- เลือกครูประจำชั้น --</option>
+              <option v-for="t in teacherOptions" :key="t.id" :value="t.id">{{ t.name }}</option>
+            </select>
           </div>
         </div>
       </AdminAppModal>
@@ -168,22 +147,19 @@ const cols = [
 
 const gradeOptions = ['ม.1', 'ม.2', 'ม.3', 'ม.4', 'ม.5', 'ม.6']
 
-const search = ref('')
+const filterClassroomId = ref('')
 const filterGrade = ref('')
-
-const uniqueRooms = computed(() => [...new Set(rows.value.map(r => r.room).filter(Boolean))])
 
 const filteredRows = computed(() =>
   rows.value.filter((r) => {
-    const q = search.value.trim().toLowerCase()
-    const matchSearch = !q || r.name.toLowerCase().includes(q) || r.room.toLowerCase().includes(q) || r.advisorTeacherName.toLowerCase().includes(q)
+    const matchClassroom = !filterClassroomId.value || r.id === filterClassroomId.value
     const matchGrade = !filterGrade.value || r.grade === filterGrade.value
-    return matchSearch && matchGrade
+    return matchClassroom && matchGrade
   }),
 )
 
 function clearFilters() {
-  search.value = ''
+  filterClassroomId.value = ''
   filterGrade.value = ''
 }
 
@@ -307,17 +283,6 @@ const emptyForm = (): ClassroomRow => ({
 
 const form = ref<ClassroomRow>(emptyForm())
 const formErrors = ref({ name: '' })
-
-watch(() => form.value.advisorTeacherName, (value) => {
-  const query = value.trim()
-  if (!query) {
-    form.value.advisorTeacherId = ''
-    return
-  }
-
-  const found = teacherOptions.value.find(t => t.name.toLowerCase() === query.toLowerCase())
-  form.value.advisorTeacherId = found?.id || ''
-})
 
 function validate() {
   formErrors.value = { name: '' }
@@ -659,6 +624,11 @@ async function confirmDelete() {
 .field-error {
   font-size: 0.75rem;
   color: #ef4444;
+}
+
+.field-hint {
+  font-size: 0.75rem;
+  color: #6b7280;
 }
 
 @media (max-width: 760px) {

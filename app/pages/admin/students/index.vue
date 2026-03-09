@@ -13,31 +13,17 @@
       </div>
 
       <div class="filter-row">
-        <div class="search-wrap">
-          <svg class="search-icon" width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="6.5" cy="6.5" r="4.5" stroke="#9ca3af" stroke-width="1.4"/><path d="M10 10l3 3" stroke="#9ca3af" stroke-width="1.4" stroke-linecap="round"/></svg>
-          <input
-            v-model="search"
-            class="input search"
-            list="student-search-list"
-            type="text"
-            placeholder="ค้นหาชื่อ หรือ รหัสนักเรียน..."
-            autocomplete="off"
-          />
-          <datalist id="student-search-list">
-            <option v-for="r in rows" :key="r.studentId" :value="r.name" />
-            <option v-for="r in rows" :key="`${r.studentId}-code`" :value="r.code" />
-          </datalist>
-        </div>
+        <select v-model="filterStudentId" class="filter-select">
+          <option value="">นักเรียนทั้งหมด</option>
+          <option v-for="r in rows" :key="r.studentId" :value="r.studentId">{{ r.code }} - {{ r.name }}</option>
+        </select>
 
-        <AdminSearchSelect
-          v-model="filterClassroom"
-          class="sel"
-          :options="classroomFilterOptions"
-          placeholder="ห้องเรียนทั้งหมด"
-          :clearable="true"
-        />
+        <select v-model="filterClassroom" class="filter-select">
+          <option value="">ห้องเรียนทั้งหมด</option>
+          <option v-for="opt in classroomFilterOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+        </select>
 
-        <button v-if="search || filterClassroom" type="button" class="btn btn-clear" @click="clearFilters">ล้างตัวกรอง</button>
+        <button v-if="filterStudentId || filterClassroom" type="button" class="btn btn-clear" @click="clearFilters">ล้างตัวกรอง</button>
       </div>
 
       <AdminDataTable title="รายชื่อนักเรียน" :columns="cols" :rows="filteredRows">
@@ -251,20 +237,16 @@ const cols = [
   { key: 'status', label: 'สถานะ' },
 ]
 
-const search = ref('')
+const filterStudentId = ref('')
 const filterClassroom = ref('')
 
-const classroomFilterOptions = computed(() => ([
-  { label: 'ห้องเรียนทั้งหมด', value: '' },
-  ...classroomRows.value.map(item => ({ label: item.name, value: item.id })),
-]))
+const classroomFilterOptions = computed(() => classroomRows.value.map(item => ({ label: item.name, value: item.id })))
 
 const filteredRows = computed(() =>
   rows.value.filter((r) => {
-    const q = search.value.trim().toLowerCase()
-    const matchSearch = !q || r.name.toLowerCase().includes(q) || r.code.toLowerCase().includes(q)
+    const matchStudent = !filterStudentId.value || r.studentId === filterStudentId.value
     const matchClassroom = !filterClassroom.value || r.currentClassroomId === filterClassroom.value
-    return matchSearch && matchClassroom
+    return matchStudent && matchClassroom
   }),
 )
 
@@ -331,7 +313,7 @@ function toIsActive(status: string) {
 }
 
 function clearFilters() {
-  search.value = ''
+  filterStudentId.value = ''
   filterClassroom.value = ''
 }
 

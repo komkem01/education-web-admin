@@ -16,34 +16,23 @@
       </div>
 
       <div class="filter-row">
-        <div class="search-wrap">
-          <svg class="search-icon" width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="6.5" cy="6.5" r="4.5" stroke="#9ca3af" stroke-width="1.4"/><path d="M10 10l3 3" stroke="#9ca3af" stroke-width="1.4" stroke-linecap="round"/></svg>
-          <input
-            v-model="search"
-            class="input search"
-            list="teacher-search-list"
-            type="text"
-            placeholder="ค้นหาชื่อ หรือ รหัสครู..."
-            autocomplete="off"
-          />
-          <datalist id="teacher-search-list">
-            <option v-for="r in rows" :key="r.teacherId" :value="r.name" />
-            <option v-for="r in rows" :key="`${r.teacherId}-code`" :value="r.id" />
-          </datalist>
-        </div>
+        <select v-model="filterTeacherId" class="filter-select">
+          <option value="">ครูทั้งหมด</option>
+          <option v-for="r in rows" :key="r.teacherId" :value="r.teacherId">{{ r.id }} - {{ r.name }}</option>
+        </select>
 
-        <AdminSearchSelect
-          v-model="filterSubject"
-          class="sel"
-          :options="filterSubjectOptions"
-          placeholder="กลุ่มสาระทั้งหมด"
-          :clearable="true"
-        />
+        <select v-model="filterSubject" class="filter-select">
+          <option value="">กลุ่มสาระทั้งหมด</option>
+          <option v-for="opt in filterSubjectOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+        </select>
 
-        <button v-if="search || filterSubject" type="button" class="btn btn-clear" @click="clearFilters">ล้างตัวกรอง</button>
+        <button v-if="filterTeacherId || filterSubject" type="button" class="btn btn-clear" @click="clearFilters">ล้างตัวกรอง</button>
       </div>
 
       <AdminDataTable title="รายชื่อครู" :columns="cols" :rows="filteredRows">
+        <template #cell-subject="{ value }">
+          {{ (value as string) || '-' }}
+        </template>
         <template #cell-status="{ value }">
           <AdminStatusBadge :label="value as string" :variant="value === 'อนุมัติแล้ว' ? 'approved' : 'default'" />
         </template>
@@ -107,7 +96,13 @@
 
           <label class="field">
             <span>กลุ่มสาระ/ฝ่ายงาน</span>
-            <AdminSearchSelect v-model="form.subject" :options="subjectOptions" placeholder="เลือกกลุ่มสาระ" />
+            <AdminSearchSelect
+              v-model="form.subject"
+              :options="subjectOptions"
+              placeholder="เลือกจากข้อมูลที่มี"
+              :disabled="subjectOptions.length === 0"
+            />
+            <span v-if="subjectOptions.length === 0" class="field-hint">ยังไม่มีกลุ่มสาระ/ฝ่ายงานในข้อมูลครู</span>
           </label>
 
           <label class="field">
@@ -248,6 +243,15 @@ type PrefixItem = {
   is_active: boolean
 }
 
+type SubjectGroupItem = {
+  id: string
+  school_id: string
+  code: string
+  name: string
+  head_teacher: string | null
+  is_active: boolean
+}
+
 type TeacherEducationApiItem = {
   id: string
   teacher_id: string
@@ -337,8 +341,9 @@ const pageLoading = ref(false)
 const errorMessage = ref('')
 const genderRows = ref<GenderItem[]>([])
 const prefixRows = ref<PrefixItem[]>([])
+const subjectGroupRows = ref<SubjectGroupItem[]>([])
 
-const search = ref('')
+const filterTeacherId = ref('')
 const filterSubject = ref('')
 
 const formTabs = [
@@ -362,7 +367,7 @@ const emptyForm = (): TeacherRow & { email: string, password: string } => ({
   lastName: '',
   id: '',
   name: '',
-  subject: 'ภาษาไทย',
+  subject: '',
   class: '',
   courses: 0,
   status: 'อนุมัติแล้ว',
@@ -381,13 +386,12 @@ const formErrors = ref({ firstName: '', lastName: '', email: '', password: '' })
 const showConfirm = ref(false)
 const deleteTarget = ref<TeacherRow | null>(null)
 
-const subjectValues = ['ภาษาไทย', 'คณิตศาสตร์', 'วิทยาศาสตร์', 'สังคมศึกษา', 'ภาษาต่างประเทศ', 'ศิลปะ', 'พลศึกษา']
-const subjectOptions = computed(() => {
-  const dynamic = [...new Set(rows.value.map(r => r.subject).filter(Boolean))]
-  const merged = [...new Set([...dynamic, ...subjectValues])]
-  return merged.map(value => ({ label: value, value }))
-})
-const filterSubjectOptions = computed(() => [{ label: 'กลุ่มสาระทั้งหมด', value: '' }, ...subjectOptions.value])
+const subjectOptions = computed(() =>
+  subjectGroupRows.value
+    .filter(item => item.is_active)
+    .map(item => ({ label: item.name, value: item.name })),
+)
+const filterSubjectOptions = computed(() => subjectOptions.value)
 const statusOptions = [
   { label: 'อนุมัติแล้ว', value: 'อนุมัติแล้ว' },
   { label: 'ระงับ', value: 'ระงับ' },
@@ -414,10 +418,9 @@ const prefixOptions = computed(() => {
 })
 
 const filteredRows = computed(() => rows.value.filter((r) => {
-  const q = search.value.trim().toLowerCase()
-  const matchSearch = !q || r.name.toLowerCase().includes(q) || r.id.toLowerCase().includes(q)
+  const matchTeacher = !filterTeacherId.value || r.teacherId === filterTeacherId.value
   const matchSubject = !filterSubject.value || r.subject === filterSubject.value
-  return matchSearch && matchSubject
+  return matchTeacher && matchSubject
 }))
 
 function authHeaders() {
@@ -475,17 +478,19 @@ async function loadRows() {
   errorMessage.value = ''
 
   try {
-    const [teachersRes, membersRes, gendersRes, prefixesRes] = await Promise.all([
+    const [teachersRes, membersRes, gendersRes, prefixesRes, subjectGroupsRes] = await Promise.all([
       apiFetch<BaseResponse<TeacherApiItem[]>>('/teachers?only_active=false', { headers: authHeaders() }),
       apiFetch<BaseResponse<MemberItem[]>>('/members?role=teacher&only_active=false', { headers: authHeaders() }),
       apiFetch<BaseResponse<GenderItem[]>>('/genders?only_active=true', { headers: authHeaders() }),
       apiFetch<BaseResponse<PrefixItem[]>>('/prefixes?only_active=true', { headers: authHeaders() }),
+      apiFetch<BaseResponse<SubjectGroupItem[]>>('/subject-groups?only_active=true', { headers: authHeaders() }),
     ])
 
     const teachers = Array.isArray(teachersRes.data) ? teachersRes.data : []
     const members = Array.isArray(membersRes.data) ? membersRes.data : []
     genderRows.value = Array.isArray(gendersRes.data) ? gendersRes.data : []
     prefixRows.value = Array.isArray(prefixesRes.data) ? prefixesRes.data : []
+    subjectGroupRows.value = Array.isArray(subjectGroupsRes.data) ? subjectGroupsRes.data : []
 
     const genderNameById = new Map(genderRows.value.map(item => [item.id, item.name] as const))
     const prefixNameById = new Map(prefixRows.value.map(item => [item.id, item.name] as const))
@@ -510,7 +515,7 @@ async function loadRows() {
         lastName,
         id: (teacher.teacher_code || '').trim() || teacher.id,
         name,
-        subject: (teacher.department || '').trim() || 'ไม่ระบุ',
+        subject: (teacher.department || '').trim(),
         class: (teacher.current_position || '').trim() || '-',
         courses: 0,
         status: mapStatus(Boolean(teacher.is_active)),
@@ -527,6 +532,7 @@ async function loadRows() {
   catch {
     errorMessage.value = 'ไม่สามารถโหลดข้อมูลครูได้'
     rows.value = []
+    subjectGroupRows.value = []
   }
   finally {
     pageLoading.value = false
@@ -538,7 +544,7 @@ if (import.meta.client) {
 }
 
 function clearFilters() {
-  search.value = ''
+  filterTeacherId.value = ''
   filterSubject.value = ''
 }
 
@@ -800,6 +806,7 @@ async function confirmDelete() {
 .field--full { grid-column: 1 / -1; }
 .req { color: #ef4444; }
 .field-error { font-size: 0.75rem; color: #ef4444; margin-top: 2px; }
+.field-hint { font-size: 0.75rem; color: #6b7280; margin-top: 2px; }
 .id-display { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; }
 .id-badge { font-size: 0.875rem; font-weight: 600; color: #374151; font-family: monospace; letter-spacing: 0.05em; }
 .id-hint { font-size: 0.75rem; color: #9ca3af; }
