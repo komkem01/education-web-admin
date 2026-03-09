@@ -54,6 +54,20 @@
               <div class="detail-item"><span class="detail-label">เบอร์โทรศัพท์</span><span class="detail-value">{{ record.phone || '-' }}</span></div>
             </div>
           </div>
+
+          <div class="detail-card" style="margin-top: 16px;">
+            <p class="section-title">ที่อยู่</p>
+            <div v-if="record.addresses.length === 0" class="empty-state">ยังไม่มีข้อมูลที่อยู่</div>
+            <div v-else class="address-list">
+              <div v-for="(addr, idx) in record.addresses" :key="addr.id || `addr-${idx}`" class="address-view-card">
+                <div class="address-view-top">
+                  <span class="address-view-label">{{ addr.label || `ที่อยู่ ${idx + 1}` }}</span>
+                  <span v-if="addr.isPrimary" class="address-primary-badge">หลัก</span>
+                </div>
+                <p class="address-view-line">{{ addr.addressLine }}</p>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div v-show="activeTab === 'education'">
@@ -143,6 +157,34 @@
             <span>สถานะบัญชี</span>
             <AdminSearchSelect v-model="form.status" :options="statusOptions" placeholder="เลือกสถานะบัญชี" :searchable="false" />
           </label>
+
+          <div class="field field--full">
+            <div class="address-header">
+              <span>ที่อยู่</span>
+              <button type="button" class="btn btn-add-address" @click="addAddress">+ เพิ่มที่อยู่</button>
+            </div>
+            <div v-if="form.addresses.length === 0" class="field-hint">ยังไม่มีที่อยู่</div>
+            <div v-for="(addr, idx) in form.addresses" :key="`addr-${idx}`" class="address-card">
+              <div class="address-card-top">
+                <span class="address-no">ที่อยู่ {{ idx + 1 }}</span>
+                <button type="button" class="btn-remove-address" @click="removeAddress(idx)">ลบ</button>
+              </div>
+              <div class="form-grid">
+                <label class="field">
+                  <span>ป้ายกำกับ</span>
+                  <input v-model="addr.label" class="input" type="text" placeholder="เช่น บ้าน, หอพัก" />
+                </label>
+                <label class="field">
+                  <span>ที่อยู่นี้เป็นหลัก</span>
+                  <input v-model="addr.isPrimary" type="checkbox" class="address-checkbox" />
+                </label>
+                <label class="field field--full">
+                  <span>รายละเอียดที่อยู่</span>
+                  <textarea v-model="addr.addressLine" class="input textarea" rows="2" placeholder="กรอกที่อยู่"></textarea>
+                </label>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div v-show="activeFormTab === 'education'">
@@ -236,7 +278,25 @@ type TeacherApiItem = {
   current_academic_standing: string | null
   department: string | null
   start_date: string | null
+  addresses: MemberAddressItem[] | null
   is_active: boolean
+}
+
+type MemberAddressItem = {
+  id: string
+  member_id: string
+  label: string | null
+  address_line: string
+  is_primary: boolean
+  sort_order: number
+}
+
+type AddressRecord = {
+  id?: string
+  label: string
+  addressLine: string
+  isPrimary: boolean
+  sortOrder: number
 }
 
 type MemberItem = {
@@ -317,6 +377,7 @@ type TeacherRecord = {
   phone: string
   currentAcademicStanding: string
   startDate: string
+  addresses: AddressRecord[]
   education: EducationRecord[]
   workHistory: WorkRecord[]
 }
@@ -381,6 +442,7 @@ const form = ref<TeacherRecord>({
   phone: '',
   currentAcademicStanding: '',
   startDate: '',
+  addresses: [],
   education: [],
   workHistory: [],
 })
@@ -485,6 +547,28 @@ function mapWorkRow(item: TeacherWorkApiItem): WorkRecord {
   }
 }
 
+function mapAddressRecords(items: MemberAddressItem[] | null | undefined): AddressRecord[] {
+  if (!Array.isArray(items)) return []
+  return items.map((item, index) => ({
+    id: item.id,
+    label: (item.label || '').trim(),
+    addressLine: (item.address_line || '').trim(),
+    isPrimary: Boolean(item.is_primary),
+    sortOrder: Number.isFinite(item.sort_order) ? item.sort_order : index,
+  }))
+}
+
+function toAddressPayload(items: AddressRecord[]) {
+  return items
+    .map((item, index) => ({
+      label: item.label.trim() || null,
+      address_line: item.addressLine.trim(),
+      is_primary: Boolean(item.isPrimary),
+      sort_order: Number.isFinite(item.sortOrder) ? item.sortOrder : index,
+    }))
+    .filter(item => item.address_line.length > 0)
+}
+
 async function loadRecord() {
   if (!import.meta.client || !authToken.value || !id.value) return
 
@@ -533,6 +617,7 @@ async function loadRecord() {
       phone: (teacher.phone || '').trim(),
       currentAcademicStanding: (teacher.current_academic_standing || '').trim(),
       startDate: toDateOnly(teacher.start_date),
+      addresses: mapAddressRecords(teacher.addresses),
       education: (Array.isArray(educationsRes.data) ? educationsRes.data : []).map(mapEducationRow),
       workHistory: (Array.isArray(worksRes.data) ? worksRes.data : []).map(mapWorkRow),
     }
@@ -557,11 +642,20 @@ function addEducation() { form.value.education.push(emptyEdu()) }
 function removeEducation(idx: number) { form.value.education.splice(idx, 1) }
 function addWork() { form.value.workHistory.push(emptyWork()) }
 function removeWork(idx: number) { form.value.workHistory.splice(idx, 1) }
+function addAddress() { form.value.addresses.push({ label: '', addressLine: '', isPrimary: form.value.addresses.length === 0, sortOrder: form.value.addresses.length }) }
+function removeAddress(idx: number) {
+  form.value.addresses.splice(idx, 1)
+  form.value.addresses = form.value.addresses.map((item, index) => ({ ...item, sortOrder: index }))
+  if (form.value.addresses.length > 0 && !form.value.addresses.some(item => item.isPrimary)) {
+    form.value.addresses[0].isPrimary = true
+  }
+}
 
 function openEdit() {
   if (!record.value) return
   form.value = {
     ...record.value,
+    addresses: record.value.addresses.map((item, index) => ({ ...item, sortOrder: Number.isFinite(item.sortOrder) ? item.sortOrder : index })),
     education: record.value.education.map(item => ({ ...item })),
     workHistory: record.value.workHistory.map(item => ({ ...item })),
   }
@@ -654,6 +748,7 @@ async function saveRow() {
         current_academic_standing: form.value.currentAcademicStanding.trim() || null,
         department: form.value.subject.trim() || null,
         start_date: form.value.startDate || null,
+        addresses: toAddressPayload(form.value.addresses),
         is_active: toIsActive(form.value.status),
       },
     })
@@ -727,11 +822,28 @@ async function confirmDelete() {
 .hvc-meta { font-size: 0.78rem; color: #6b7280; background: #f3f4f6; border-radius: 999px; padding: 2px 8px; }
 .hvc-note { font-size: 0.78rem; color: #9ca3af; }
 .empty-state { text-align: center; padding: 32px 0; color: #9ca3af; font-size: 0.875rem; }
+.address-list { display: flex; flex-direction: column; gap: 10px; }
+.address-view-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px; background: #fff; }
+.address-view-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.address-view-label { font-size: 0.85rem; font-weight: 600; color: #111827; }
+.address-primary-badge { font-size: 0.72rem; color: #1d4ed8; background: #eff6ff; border-radius: 999px; padding: 2px 8px; }
+.address-view-line { margin: 0; white-space: pre-wrap; font-size: 0.84rem; color: #4b5563; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .field { display: flex; flex-direction: column; gap: 5px; font-size: 0.83rem; font-weight: 500; color: #374151; }
 .field--full { grid-column: 1 / -1; }
 .req { color: #ef4444; }
 .field-error { font-size: 0.75rem; color: #ef4444; }
+.field-hint { font-size: 0.75rem; color: #6b7280; }
+.textarea { resize: vertical; min-height: 62px; }
+.address-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.address-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; background: #fafafa; margin-top: 8px; }
+.address-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.address-no { font-size: 0.78rem; font-weight: 600; color: #6b7280; }
+.btn-add-address { border-color: #d1d5db; background: #fff; color: #374151; padding: 4px 10px; font-size: 0.75rem; }
+.btn-add-address:hover { background: #f9fafb; }
+.btn-remove-address { font-size: 0.75rem; padding: 3px 8px; border-radius: 6px; border: 1px solid #fecaca; background: #fef2f2; color: #b91c1c; cursor: pointer; }
+.btn-remove-address:hover { background: #fee2e2; }
+.address-checkbox { width: 18px; height: 18px; accent-color: #2563eb; margin-top: 4px; }
 .input { border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 12px; font-size: 0.875rem; font-family: inherit; background: #fff; color: #111827; outline: none; transition: border-color 0.12s; }
 .input:focus { border-color: #6366f1; }
 .id-display { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; }

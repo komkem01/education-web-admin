@@ -34,11 +34,30 @@
             <div class="detail-item"><span class="detail-label">คำนำหน้า</span><span class="detail-value">{{ record.prefix || '-' }}</span></div>
             <div class="detail-item"><span class="detail-label">ชื่อ</span><span class="detail-value">{{ record.firstName || '-' }}</span></div>
             <div class="detail-item"><span class="detail-label">นามสกุล</span><span class="detail-value">{{ record.lastName || '-' }}</span></div>
+            <div class="detail-item"><span class="detail-label">ชื่อเล่น</span><span class="detail-value">{{ record.nickName || '-' }}</span></div>
+            <div class="detail-item"><span class="detail-label">วันเกิด</span><span class="detail-value">{{ formatDobForDisplay(record.dob) }}</span></div>
+            <div class="detail-item"><span class="detail-label">กรุ๊ปเลือด</span><span class="detail-value">{{ record.bloodType || '-' }}</span></div>
+            <div class="detail-item"><span class="detail-label">ศาสนา</span><span class="detail-value">{{ record.religion || '-' }}</span></div>
+            <div class="detail-item"><span class="detail-label">สัญชาติ</span><span class="detail-value">{{ record.nationality || '-' }}</span></div>
             <div class="detail-item"><span class="detail-label">ห้องเรียน</span><span class="detail-value">{{ record.classroom || '-' }}</span></div>
             <div class="detail-item"><span class="detail-label">ครูที่ปรึกษา</span><span class="detail-value">{{ record.advisor || '-' }}</span></div>
             <div class="detail-item"><span class="detail-label">เลขที่ประจำห้อง</span><span class="detail-value">{{ record.defaultStudentNo || '-' }}</span></div>
             <div class="detail-item"><span class="detail-label">เลขบัตรประชาชน</span><span class="detail-value mono">{{ record.citizenId || '-' }}</span></div>
             <div class="detail-item"><span class="detail-label">เบอร์โทรศัพท์</span><span class="detail-value">{{ record.phone || '-' }}</span></div>
+          </div>
+        </div>
+
+        <div class="detail-card" style="margin-top: 16px;">
+          <p class="section-title">ที่อยู่</p>
+          <div v-if="record.addresses.length === 0" class="empty-state">ยังไม่มีข้อมูลที่อยู่</div>
+          <div v-else class="address-list">
+            <div v-for="(addr, idx) in record.addresses" :key="addr.id || `addr-${idx}`" class="address-view-card">
+              <div class="address-view-top">
+                <span class="address-view-label">{{ addr.label || `ที่อยู่ ${idx + 1}` }}</span>
+                <span v-if="addr.isPrimary" class="address-primary-badge">หลัก</span>
+              </div>
+              <p class="address-view-line">{{ addr.addressLine }}</p>
+            </div>
           </div>
         </div>
 
@@ -91,6 +110,36 @@
           </label>
 
           <label class="field">
+            <span>ชื่อเล่น</span>
+            <input v-model="form.nickName" class="input" type="text" placeholder="ชื่อเล่น" />
+            <span v-if="formErrors.nickName" class="field-error">{{ formErrors.nickName }}</span>
+          </label>
+
+          <label class="field">
+            <span>วันเกิด</span>
+            <input v-model="form.dob" class="input" type="date" />
+            <span v-if="formErrors.dob" class="field-error">{{ formErrors.dob }}</span>
+          </label>
+
+          <label class="field">
+            <span>กรุ๊ปเลือด</span>
+            <AdminSearchSelect v-model="form.bloodType" :options="bloodTypeOptions" placeholder="เลือกกรุ๊ปเลือด" :searchable="false" />
+            <span v-if="formErrors.bloodType" class="field-error">{{ formErrors.bloodType }}</span>
+          </label>
+
+          <label class="field">
+            <span>ศาสนา</span>
+            <input v-model="form.religion" class="input" type="text" placeholder="ศาสนา" />
+            <span v-if="formErrors.religion" class="field-error">{{ formErrors.religion }}</span>
+          </label>
+
+          <label class="field">
+            <span>สัญชาติ</span>
+            <input v-model="form.nationality" class="input" type="text" placeholder="สัญชาติ" />
+            <span v-if="formErrors.nationality" class="field-error">{{ formErrors.nationality }}</span>
+          </label>
+
+          <label class="field">
             <span>ห้องเรียนปัจจุบัน</span>
             <AdminSearchSelect v-model="form.currentClassroomId" :options="classroomOptions" placeholder="เลือกห้องเรียน" />
           </label>
@@ -102,12 +151,14 @@
 
           <label class="field">
             <span>เลขบัตรประชาชน</span>
-            <input v-model="form.citizenId" class="input" type="text" placeholder="13 หลัก" />
+            <input v-model="form.citizenId" class="input" type="text" inputmode="numeric" placeholder="13 หลัก" @input="onCitizenIdInput" />
+            <span v-if="formErrors.citizenId" class="field-error">{{ formErrors.citizenId }}</span>
           </label>
 
           <label class="field">
             <span>เบอร์โทรศัพท์</span>
-            <input v-model="form.phone" class="input" type="text" placeholder="08x-xxx-xxxx" />
+            <input v-model="form.phone" class="input" type="text" placeholder="08x-xxx-xxxx" @input="onPhoneInput" />
+            <span v-if="formErrors.phone" class="field-error">{{ formErrors.phone }}</span>
           </label>
 
           <label class="field">
@@ -119,6 +170,34 @@
             <span>สถานะบัญชี</span>
             <AdminSearchSelect v-model="form.status" :options="statusOptions" placeholder="เลือกสถานะ" :searchable="false" />
           </label>
+
+          <div class="field field--full">
+            <div class="address-header">
+              <span>ที่อยู่</span>
+              <button type="button" class="btn btn-add-address" @click="addAddress">+ เพิ่มที่อยู่</button>
+            </div>
+            <div v-if="form.addresses.length === 0" class="field-hint">ยังไม่มีที่อยู่</div>
+            <div v-for="(addr, idx) in form.addresses" :key="`addr-${idx}`" class="address-card">
+              <div class="address-card-top">
+                <span class="address-no">ที่อยู่ {{ idx + 1 }}</span>
+                <button type="button" class="btn-remove-address" @click="removeAddress(idx)">ลบ</button>
+              </div>
+              <div class="form-grid">
+                <label class="field">
+                  <span>ป้ายกำกับ</span>
+                  <input v-model="addr.label" class="input" type="text" placeholder="เช่น บ้าน, หอพัก" />
+                </label>
+                <label class="field">
+                  <span>ที่อยู่นี้เป็นหลัก</span>
+                  <input v-model="addr.isPrimary" type="checkbox" class="address-checkbox" />
+                </label>
+                <label class="field field--full">
+                  <span>รายละเอียดที่อยู่</span>
+                  <textarea v-model="addr.addressLine" class="input textarea" rows="2" placeholder="กรอกที่อยู่"></textarea>
+                </label>
+              </div>
+            </div>
+          </div>
         </div>
       </AdminAppModal>
 
@@ -138,6 +217,22 @@ definePageMeta({ layout: 'admin' })
 
 type BaseResponse<T> = { data: T }
 
+type ResponseErrorMessage = {
+  code?: string
+  message?: string
+  input?: string
+}
+
+type ApiErrorPayload = {
+  status?: {
+    code?: string
+    message?: string
+  }
+  data?: {
+    errors?: Record<string, ResponseErrorMessage>
+  }
+}
+
 type StudentApiItem = {
   id: string
   member_id: string
@@ -149,9 +244,32 @@ type StudentApiItem = {
   default_student_no: number | null
   first_name: string | null
   last_name: string | null
+  nick_name: string | null
+  dob: string | null
+  blood_type: string | null
+  religion: string | null
+  nationality: string | null
   citizen_id: string | null
   phone: string | null
+  addresses: MemberAddressItem[] | null
   is_active: boolean
+}
+
+type MemberAddressItem = {
+  id: string
+  member_id: string
+  label: string | null
+  address_line: string
+  is_primary: boolean
+  sort_order: number
+}
+
+type AddressRecord = {
+  id?: string
+  label: string
+  addressLine: string
+  isPrimary: boolean
+  sortOrder: number
 }
 
 type TeacherApiItem = {
@@ -227,6 +345,11 @@ type StudentRecord = {
   prefix: string
   firstName: string
   lastName: string
+  nickName: string
+  dob: string
+  bloodType: string
+  religion: string
+  nationality: string
   code: string
   name: string
   classroom: string
@@ -234,6 +357,7 @@ type StudentRecord = {
   defaultStudentNo: number | null
   citizenId: string
   phone: string
+  addresses: AddressRecord[]
   status: string
   parents: StudentParentRecord[]
 }
@@ -262,6 +386,22 @@ const statusOptions = [
   { label: 'ไม่ใช้งาน', value: 'ไม่ใช้งาน' },
 ]
 
+const bloodTypeOptions = [
+  { label: 'ไม่ระบุกรุ๊ปเลือด', value: '' },
+  { label: 'A', value: 'A' },
+  { label: 'B', value: 'B' },
+  { label: 'AB', value: 'AB' },
+  { label: 'O', value: 'O' },
+  { label: 'A+', value: 'A+' },
+  { label: 'A-', value: 'A-' },
+  { label: 'B+', value: 'B+' },
+  { label: 'B-', value: 'B-' },
+  { label: 'AB+', value: 'AB+' },
+  { label: 'AB-', value: 'AB-' },
+  { label: 'O+', value: 'O+' },
+  { label: 'O-', value: 'O-' },
+]
+
 const form = ref<StudentRecord>({
   studentId: '',
   memberId: '',
@@ -274,6 +414,11 @@ const form = ref<StudentRecord>({
   prefix: '',
   firstName: '',
   lastName: '',
+  nickName: '',
+  dob: '',
+  bloodType: '',
+  religion: '',
+  nationality: '',
   code: '',
   name: '',
   classroom: '',
@@ -281,10 +426,11 @@ const form = ref<StudentRecord>({
   defaultStudentNo: null,
   citizenId: '',
   phone: '',
+  addresses: [],
   status: 'ปกติ',
   parents: [],
 })
-const formErrors = ref({ firstName: '', lastName: '' })
+const formErrors = ref({ firstName: '', lastName: '', nickName: '', dob: '', bloodType: '', religion: '', nationality: '', citizenId: '', phone: '' })
 
 const genderOptions = computed(() => [
   { label: 'ไม่ระบุเพศ', value: '' },
@@ -337,6 +483,33 @@ function toIsActive(status: string) {
   return status === 'ปกติ'
 }
 
+function isValidDateString(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const date = new Date(`${value}T00:00:00Z`)
+  if (Number.isNaN(date.getTime())) return false
+  return date.toISOString().slice(0, 10) === value
+}
+
+function normalizeDobValue(value: string | null | undefined): string {
+  const raw = (value || '').trim()
+  if (!raw) return ''
+
+  const directDateMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/)
+  if (directDateMatch) return directDateMatch[1]
+
+  const parsed = new Date(raw)
+  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10)
+  return raw
+}
+
+function formatDobForDisplay(value: string | null | undefined): string {
+  const normalized = normalizeDobValue(value)
+  if (!normalized || !/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return '-'
+  const [year, month, day] = normalized.split('-')
+  const buddhistYear = Number(year) + 543
+  return `${day}/${month}/${buddhistYear}`
+}
+
 function fullName(prefix: string, firstName: string | null, lastName: string | null) {
   const name = `${(firstName || '').trim()} ${(lastName || '').trim()}`.trim()
   if (!prefix) return name
@@ -376,6 +549,11 @@ function mapStudentRecord(item: StudentApiItem): StudentRecord {
     prefix,
     firstName,
     lastName,
+    nickName: (item.nick_name || '').trim(),
+    dob: normalizeDobValue(item.dob),
+    bloodType: (item.blood_type || '').trim(),
+    religion: (item.religion || '').trim(),
+    nationality: (item.nationality || '').trim(),
     code: (item.student_code || '').trim() || item.id,
     name: fullName(prefix, firstName, lastName) || '-',
     classroom: (item.current_classroom_id && classroomNameById.get(item.current_classroom_id)) || '-',
@@ -383,9 +561,32 @@ function mapStudentRecord(item: StudentApiItem): StudentRecord {
     defaultStudentNo: item.default_student_no,
     citizenId: (item.citizen_id || '').trim(),
     phone: (item.phone || '').trim(),
+    addresses: mapAddressRecords(item.addresses),
     status: mapStatus(Boolean(item.is_active)),
     parents: [],
   }
+}
+
+function mapAddressRecords(items: MemberAddressItem[] | null | undefined): AddressRecord[] {
+  if (!Array.isArray(items)) return []
+  return items.map((item, index) => ({
+    id: item.id,
+    label: (item.label || '').trim(),
+    addressLine: (item.address_line || '').trim(),
+    isPrimary: Boolean(item.is_primary),
+    sortOrder: Number.isFinite(item.sort_order) ? item.sort_order : index,
+  }))
+}
+
+function toAddressPayload(items: AddressRecord[]) {
+  return items
+    .map((item, index) => ({
+      label: item.label.trim() || null,
+      address_line: item.addressLine.trim(),
+      is_primary: Boolean(item.isPrimary),
+      sort_order: Number.isFinite(item.sortOrder) ? item.sortOrder : index,
+    }))
+    .filter(item => item.address_line.length > 0)
 }
 
 async function loadParentsByStudentId(studentId: string) {
@@ -447,16 +648,120 @@ if (import.meta.client) {
 
 function openEdit() {
   if (!record.value) return
-  form.value = { ...record.value }
-  formErrors.value = { firstName: '', lastName: '' }
+  form.value = {
+    ...record.value,
+    addresses: record.value.addresses.map((item, index) => ({ ...item, sortOrder: Number.isFinite(item.sortOrder) ? item.sortOrder : index })),
+  }
+  formErrors.value = { firstName: '', lastName: '', nickName: '', dob: '', bloodType: '', religion: '', nationality: '', citizenId: '', phone: '' }
   showModal.value = true
 }
 
 function validate() {
-  formErrors.value = { firstName: '', lastName: '' }
-  if (!form.value.firstName.trim()) formErrors.value.firstName = 'กรุณาระบุชื่อ'
-  if (!form.value.lastName.trim()) formErrors.value.lastName = 'กรุณาระบุนามสกุล'
-  return !formErrors.value.firstName && !formErrors.value.lastName
+  formErrors.value = { firstName: '', lastName: '', nickName: '', dob: '', bloodType: '', religion: '', nationality: '', citizenId: '', phone: '' }
+
+  const firstName = form.value.firstName.trim()
+  const lastName = form.value.lastName.trim()
+  const nickName = form.value.nickName.trim()
+  const dob = form.value.dob.trim()
+  const bloodType = form.value.bloodType.trim()
+  const religion = form.value.religion.trim()
+  const nationality = form.value.nationality.trim()
+  const citizenId = form.value.citizenId.trim()
+  const phone = form.value.phone.trim()
+
+  if (!firstName) formErrors.value.firstName = 'กรุณาระบุชื่อ'
+  else if (firstName.length > 255) formErrors.value.firstName = 'ชื่อต้องไม่เกิน 255 ตัวอักษร'
+
+  if (!lastName) formErrors.value.lastName = 'กรุณาระบุนามสกุล'
+  else if (lastName.length > 255) formErrors.value.lastName = 'นามสกุลต้องไม่เกิน 255 ตัวอักษร'
+
+  if (nickName.length > 255) formErrors.value.nickName = 'ชื่อเล่นต้องไม่เกิน 255 ตัวอักษร'
+  if (dob && !isValidDateString(dob)) formErrors.value.dob = 'วันเกิดต้องอยู่ในรูปแบบ YYYY-MM-DD'
+  if (bloodType.length > 10) formErrors.value.bloodType = 'กรุ๊ปเลือดต้องไม่เกิน 10 ตัวอักษร'
+  if (religion.length > 100) formErrors.value.religion = 'ศาสนาต้องไม่เกิน 100 ตัวอักษร'
+  if (nationality.length > 100) formErrors.value.nationality = 'สัญชาติต้องไม่เกิน 100 ตัวอักษร'
+  if (citizenId.length > 13) formErrors.value.citizenId = 'เลขบัตรประชาชนต้องไม่เกิน 13 ตัวอักษร'
+  if (phone.length > 50) formErrors.value.phone = 'เบอร์โทรศัพท์ต้องไม่เกิน 50 ตัวอักษร'
+
+  return !formErrors.value.firstName
+    && !formErrors.value.lastName
+    && !formErrors.value.nickName
+    && !formErrors.value.dob
+    && !formErrors.value.bloodType
+    && !formErrors.value.religion
+    && !formErrors.value.nationality
+    && !formErrors.value.citizenId
+    && !formErrors.value.phone
+}
+
+function onCitizenIdInput() {
+  const normalized = form.value.citizenId.replace(/\D+/g, '').slice(0, 13)
+  if (normalized !== form.value.citizenId) form.value.citizenId = normalized
+  if (formErrors.value.citizenId && normalized.length <= 13) formErrors.value.citizenId = ''
+}
+
+function onPhoneInput() {
+  form.value.phone = form.value.phone.slice(0, 50)
+  if (formErrors.value.phone && form.value.phone.length <= 50) formErrors.value.phone = ''
+}
+
+function addAddress() {
+  form.value.addresses.push({ label: '', addressLine: '', isPrimary: form.value.addresses.length === 0, sortOrder: form.value.addresses.length })
+}
+
+function removeAddress(index: number) {
+  form.value.addresses.splice(index, 1)
+  form.value.addresses = form.value.addresses.map((item, idx) => ({ ...item, sortOrder: idx }))
+  if (form.value.addresses.length > 0 && !form.value.addresses.some(item => item.isPrimary)) {
+    form.value.addresses[0].isPrimary = true
+  }
+}
+
+function extractServerError(err: unknown): ApiErrorPayload {
+  if (!err || typeof err !== 'object') return {}
+  const asRecord = err as Record<string, unknown>
+  const data = asRecord.data
+  if (!data || typeof data !== 'object') return {}
+  return data as ApiErrorPayload
+}
+
+function mapServerErrorsToForm(err: unknown) {
+  const payload = extractServerError(err)
+  const errors = payload.data?.errors
+  if (!errors || typeof errors !== 'object') return false
+
+  const fieldMap: Record<string, keyof typeof formErrors.value> = {
+    first_name: 'firstName',
+    last_name: 'lastName',
+    nick_name: 'nickName',
+    dob: 'dob',
+    blood_type: 'bloodType',
+    religion: 'religion',
+    nationality: 'nationality',
+    citizen_id: 'citizenId',
+    phone: 'phone',
+  }
+
+  let hasMapped = false
+  for (const [rawField, detail] of Object.entries(errors)) {
+    const mapped = fieldMap[rawField]
+    if (!mapped) continue
+    formErrors.value[mapped] = detail?.message || 'ข้อมูลไม่ถูกต้อง'
+    hasMapped = true
+  }
+  return hasMapped
+}
+
+function mapServerMessageToForm(err: unknown) {
+  const payload = extractServerError(err)
+  const messageKey = payload.status?.message || ''
+  if (!messageKey) return false
+
+  if (messageKey === 'student-code-duplicate') {
+    errorMessage.value = 'รหัสนักเรียนซ้ำในระบบ'
+    return true
+  }
+  return false
 }
 
 async function saveRow() {
@@ -476,8 +781,14 @@ async function saveRow() {
         default_student_no: form.value.defaultStudentNo || null,
         first_name: form.value.firstName.trim() || null,
         last_name: form.value.lastName.trim() || null,
+        nick_name: form.value.nickName.trim() || null,
+        dob: normalizeDobValue(form.value.dob) || null,
+        blood_type: form.value.bloodType.trim() || null,
+        religion: form.value.religion.trim() || null,
+        nationality: form.value.nationality.trim() || null,
         citizen_id: form.value.citizenId.trim() || null,
         phone: form.value.phone.trim() || null,
+        addresses: toAddressPayload(form.value.addresses),
         is_active: toIsActive(form.value.status),
       },
     })
@@ -485,7 +796,8 @@ async function saveRow() {
     showModal.value = false
     await loadRecord()
   }
-  catch {
+  catch (err) {
+    if (mapServerErrorsToForm(err) || mapServerMessageToForm(err)) return
     errorMessage.value = 'บันทึกข้อมูลนักเรียนไม่สำเร็จ'
   }
 }
@@ -542,10 +854,28 @@ async function confirmDelete() {
 .parent-name { font-size: 0.92rem; color: #111827; font-weight: 600; }
 .parent-relation { font-size: 0.78rem; color: #6b7280; background: #f3f4f6; border-radius: 999px; padding: 2px 8px; }
 .parent-meta { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 12px; color: #6b7280; font-size: 0.8rem; }
+.address-list { display: flex; flex-direction: column; gap: 10px; }
+.address-view-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px; background: #fff; }
+.address-view-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.address-view-label { font-size: 0.85rem; font-weight: 600; color: #111827; }
+.address-primary-badge { font-size: 0.72rem; color: #1d4ed8; background: #eff6ff; border-radius: 999px; padding: 2px 8px; }
+.address-view-line { margin: 0; white-space: pre-wrap; font-size: 0.84rem; color: #4b5563; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .field { display: flex; flex-direction: column; gap: 5px; font-size: 0.83rem; font-weight: 500; color: #374151; }
+.field--full { grid-column: 1 / -1; }
 .req { color: #ef4444; }
 .field-error { font-size: 0.75rem; color: #ef4444; }
+.field-hint { font-size: 0.75rem; color: #6b7280; }
+.textarea { resize: vertical; min-height: 62px; }
+.address-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.address-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; background: #fafafa; margin-top: 8px; }
+.address-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.address-no { font-size: 0.78rem; font-weight: 600; color: #6b7280; }
+.btn-add-address { border-color: #d1d5db; background: #fff; color: #374151; padding: 4px 10px; font-size: 0.75rem; }
+.btn-add-address:hover { background: #f9fafb; }
+.btn-remove-address { font-size: 0.75rem; padding: 3px 8px; border-radius: 6px; border: 1px solid #fecaca; background: #fef2f2; color: #b91c1c; cursor: pointer; }
+.btn-remove-address:hover { background: #fee2e2; }
+.address-checkbox { width: 18px; height: 18px; accent-color: #2563eb; margin-top: 4px; }
 .input { border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 12px; font-size: 0.875rem; font-family: inherit; background: #fff; color: #111827; outline: none; transition: border-color 0.12s; }
 .input:focus { border-color: #6366f1; }
 .id-display { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; }

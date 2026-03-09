@@ -5,7 +5,7 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">ยินดีต้อนรับ {{ headerIdentity }}</h2>
-        <p class="page-desc">ภาพรวมระบบ — โรงเรียนตัวอย่างวิทยา · ปีการศึกษา 2568</p>
+        <p class="page-desc">{{ dashboardSubtitle }}</p>
       </div>
     </div>
 
@@ -233,6 +233,13 @@ type RoleMemberApiItem = {
   roles: string[]
 }
 
+type AcademicYearApiItem = {
+  id: string
+  year: string
+  term: string
+  is_current: boolean
+}
+
 type ApprovalRow = {
   id: string
   typeKey: string
@@ -246,7 +253,7 @@ type ApprovalRow = {
 }
 
 const { loading } = usePageLoad()
-const { displayName, displayRole } = useAdminAuth()
+const { displayName, displayRole, schoolDisplay } = useAdminAuth()
 const config = useRuntimeConfig()
 const authToken = useCookie<string | null>('edu_auth_token')
 
@@ -274,6 +281,7 @@ const summary = ref<SummaryData>({
 })
 const approvals = ref<ApprovalRow[]>([])
 const roleMembers = ref<RoleMemberApiItem[]>([])
+const academicYears = ref<AcademicYearApiItem[]>([])
 
 function authHeaders() {
   return { Authorization: `Bearer ${authToken.value}` }
@@ -362,14 +370,42 @@ async function loadDashboard() {
   }
 }
 
+function normalizeAcademicYear(value: string) {
+  const raw = (value || '').trim()
+  const numeric = Number(raw)
+  if (!Number.isFinite(numeric)) return raw
+  if (numeric < 2400) return String(numeric + 543)
+  return String(numeric)
+}
+
+async function loadAcademicYears() {
+  if (!import.meta.client || !authToken.value) return
+  try {
+    const res = await apiFetch<BaseResponse<AcademicYearApiItem[]>>('/academic-years', { headers: authHeaders() })
+    academicYears.value = res.data || []
+  }
+  catch {
+    academicYears.value = []
+  }
+}
+
 if (import.meta.client) {
   loadDashboard()
+  loadAcademicYears()
 }
 
 const headerIdentity = computed(() => {
   if (!displayName.value) return displayRole.value
   return `${displayRole.value} · ${displayName.value}`
 })
+
+const currentAcademicYearLabel = computed(() => {
+  const current = academicYears.value.find(item => item.is_current) || academicYears.value[0]
+  if (current?.year) return normalizeAcademicYear(current.year)
+  return String(new Date().getFullYear() + 543)
+})
+
+const dashboardSubtitle = computed(() => `ภาพรวมระบบ — ${schoolDisplay.value} · ปีการศึกษา ${currentAcademicYearLabel.value}`)
 
 const personnelRows = computed(() =>
   roleMembers.value.filter(member => member.roles.includes('admin') || member.roles.includes('staff')),
